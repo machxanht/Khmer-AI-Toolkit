@@ -1,0 +1,6 @@
+{
+  "name": "Khmer AI Toolkit",
+  "description": "Personal tablet-first AI workspace featuring unified AI orchestration, multimodal image, video, audio, knowledge, learning, Khmer language tools, and visual automation.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
