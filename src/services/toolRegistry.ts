@@ -55,32 +55,32 @@ export async function enhanceImageSuperResolution(
   factor: '2x' | '4x' | '8x' = '2x'
 ): Promise<{ enhancedDataUrl: string; width: number; height: number; originalWidth: number; originalHeight: number }> {
   try {
+    const origDims = await new Promise<{ width: number; height: number }>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve({ width: img.naturalWidth || img.width || 512, height: img.naturalHeight || img.height || 512 });
+      img.onerror = () => resolve({ width: 512, height: 512 });
+      img.src = dataUrl;
+    });
+
     const result = await geminiService.enhanceImage(dataUrl, factor);
     const enhancedDataUrl = result.imageUrl;
 
-    return new Promise((resolve) => {
+    const enhancedDims = await new Promise<{ width: number; height: number }>((resolve) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        resolve({
-          enhancedDataUrl,
-          width: img.naturalWidth || 2048,
-          height: img.naturalHeight || 2048,
-          originalWidth: Math.round((img.naturalWidth || 2048) / (factor === '8x' ? 8 : factor === '4x' ? 4 : 2)),
-          originalHeight: Math.round((img.naturalHeight || 2048) / (factor === '8x' ? 8 : factor === '4x' ? 4 : 2)),
-        });
-      };
-      img.onerror = () => {
-        resolve({
-          enhancedDataUrl,
-          width: 2048,
-          height: 2048,
-          originalWidth: 512,
-          originalHeight: 512,
-        });
-      };
+      img.onload = () => resolve({ width: img.naturalWidth || img.width || origDims.width, height: img.naturalHeight || img.height || origDims.height });
+      img.onerror = () => resolve({ width: origDims.width, height: origDims.height });
       img.src = enhancedDataUrl;
     });
+
+    return {
+      enhancedDataUrl,
+      width: enhancedDims.width,
+      height: enhancedDims.height,
+      originalWidth: origDims.width,
+      originalHeight: origDims.height,
+    };
   } catch (err) {
     console.error('Neural super-resolution API error:', err);
     throw err;
@@ -300,13 +300,12 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
     id: 'image_remove_background',
     name: 'Background Removal Engine',
     category: 'image',
-    description: 'Removes background from active image and generates a transparent PNG asset.',
+    description: 'Segments foreground subjects using AI matting and outputs an authentic transparent PNG asset.',
     isAvailable: true,
     isMock: false,
     parameters: {
       type: 'OBJECT',
       properties: {
-        threshold: { type: 'NUMBER', description: 'Luminance threshold (0-255). Default 225.' },
         saveToLibrary: { type: 'BOOLEAN', description: 'Save result to library.' },
       },
     },
@@ -316,10 +315,7 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         throw new Error('No active image available for background removal.');
       }
 
-      const transparentDataUrl = await processImageCanvas(sourceImage, {
-        removeBackground: true,
-        threshold: params.threshold || 225,
-      });
+      const transparentDataUrl = await removeBackgroundSegmentation(sourceImage);
 
       let savedAsset: LibraryAsset | undefined;
       if (params.saveToLibrary !== false) {
@@ -340,29 +336,29 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         type: 'image',
         dataUrl: transparentDataUrl,
         asset: savedAsset,
-        text: 'Background removed successfully. Created transparent PNG.',
+        text: 'AI background segmentation completed. Transparent PNG generated.',
       };
     },
   },
 
   'image_enhance': {
     id: 'image_enhance',
-    name: 'ENHANCE! 8x Super-Resolution Scaler',
+    name: 'ENHANCE! AI Image Scaler',
     category: 'image',
-    description: 'Performs multi-pass neural super-resolution upscaling (2x, 4x, 8x) with edge-preserving Laplacian convolution sharpening.',
+    description: 'Enhances details, textures, and clarity using Gemini 3.1 Flash Lite Image model across 2x, 4x, and 8x factor presets.',
     isAvailable: true,
     isMock: false,
     parameters: {
       type: 'OBJECT',
       properties: {
-        factor: { type: 'STRING', description: 'Upscaling factor', enum: ['2x', '4x', '8x'] },
-        saveToLibrary: { type: 'BOOLEAN', description: 'Whether to save upscaled high-res asset to Shared Library.' },
+        factor: { type: 'STRING', description: 'Enhancement factor preset', enum: ['2x', '4x', '8x'] },
+        saveToLibrary: { type: 'BOOLEAN', description: 'Whether to save enhanced asset to Shared Library.' },
       },
     },
     execute: async (params, context) => {
       const sourceImage = context.activeAsset?.dataUrl || params.imageBase64;
       if (!sourceImage) {
-        throw new Error('No active image available for ENHANCE! super-resolution. Please select an image in the Library first.');
+        throw new Error('No active image available for ENHANCE! image scaler. Please select an image in the Library first.');
       }
 
       const factor = (params.factor || '2x') as '2x' | '4x' | '8x';
@@ -376,7 +372,7 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
           dataUrl: result.enhancedDataUrl,
           mimeType: 'image/png',
           sizeBytes: Math.round(result.enhancedDataUrl.length * 0.75),
-          tags: ['enhanced', factor, 'super-resolution', 'high-res'],
+          tags: ['enhanced', factor, 'ai-upscaled', 'high-res'],
           metadata: {
             toolOrigin: 'enhance-8x',
             factor,
@@ -392,7 +388,7 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         type: 'image',
         dataUrl: result.enhancedDataUrl,
         asset: savedAsset,
-        text: `Super-resolution upscaling completed at ${factor} (${result.width}x${result.height}px from ${result.originalWidth}x${result.originalHeight}px) with Laplacian edge sharpening.`,
+        text: `AI image enhancement completed (${factor} target: ${result.width}x${result.height}px from ${result.originalWidth}x${result.originalHeight}px).`,
         metadata: {
           factor,
           width: result.width,

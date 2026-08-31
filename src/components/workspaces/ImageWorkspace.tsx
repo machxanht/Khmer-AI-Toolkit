@@ -67,7 +67,8 @@ export const ImageWorkspace: React.FC = () => {
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
   const [saturation, setSaturation] = useState(100);
-  const [filterMode, setFilterMode] = useState<'normal' | 'remove_bg' | 'grayscale' | 'sepia' | 'sharpen'>('normal');
+  const [filterMode, setFilterMode] = useState<'normal' | 'grayscale' | 'sepia'>('normal');
+  const [isRemovingBg, setIsRemovingBg] = useState(false);
   const [upscaleFactor, setUpscaleFactor] = useState<'2x' | '4x' | '8x'>('8x');
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [enhancedImage, setEnhancedImage] = useState<string | null>(null);
@@ -87,22 +88,6 @@ export const ImageWorkspace: React.FC = () => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
-    if (filterMode === 'remove_bg') {
-      removeBackgroundSegmentation(activeAsset.dataUrl)
-        .then((transparentUrl) => {
-          const transImg = new Image();
-          transImg.onload = () => {
-            canvas.width = transImg.width;
-            canvas.height = transImg.height;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(transImg, 0, 0);
-          };
-          transImg.src = transparentUrl;
-        })
-        .catch((err) => console.warn('Segmentation error:', err));
-      return;
-    }
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -139,6 +124,41 @@ export const ImageWorkspace: React.FC = () => {
     };
     img.src = activeAsset.dataUrl;
   }, [activeAsset, brightness, contrast, saturation, filterMode]);
+
+  const handleRemoveBackgroundAction = async () => {
+    if (!activeAsset || activeAsset.type !== 'image') {
+      showToast('Please select an image in the Library to remove background.', 'warning');
+      return;
+    }
+    setIsRemovingBg(true);
+    try {
+      showToast('Executing AI foreground segmentation with Gemini...', 'info');
+      const transparentDataUrl = await removeBackgroundSegmentation(activeAsset.dataUrl);
+
+      const newAsset = addAsset({
+        name: `${activeAsset.name} (Cutout).png`,
+        dataUrl: transparentDataUrl,
+        type: 'image',
+        mimeType: 'image/png',
+        tags: ['cutout', 'transparent', 'bg-removed', 'ai-matting'],
+      });
+      setActiveAsset(newAsset);
+
+      addHistoryRecord({
+        toolId: 'pixshop',
+        toolName: 'AI Background Removal',
+        category: 'image',
+        prompt: `Remove background from: ${activeAsset.name}`,
+        outputPreview: transparentDataUrl,
+        status: 'success',
+      });
+      showToast('AI background removed! Transparent cutout saved to Library.', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Background removal failed', 'error');
+    } finally {
+      setIsRemovingBg(false);
+    }
+  };
 
   const handleGenerateNanoBanana = async () => {
     setIsProcessing(true);
@@ -180,7 +200,7 @@ export const ImageWorkspace: React.FC = () => {
     }
     setIsEnhancing(true);
     try {
-      showToast(`Executing ${upscaleFactor} multi-pass super-resolution & Laplacian convolution...`, 'info');
+      showToast(`Executing AI image enhancement (${upscaleFactor} target)...`, 'info');
       const result = await enhanceImageSuperResolution(activeAsset.dataUrl, upscaleFactor);
       setEnhancedImage(result.enhancedDataUrl);
       setEnhancedMetrics({
@@ -195,21 +215,21 @@ export const ImageWorkspace: React.FC = () => {
         dataUrl: result.enhancedDataUrl,
         type: 'image',
         mimeType: 'image/png',
-        tags: ['enhanced', upscaleFactor, 'super-resolution'],
+        tags: ['enhanced', upscaleFactor, 'ai-upscaled'],
       });
       setActiveAsset(newAsset);
 
       addHistoryRecord({
         toolId: 'enhance',
-        toolName: 'ENHANCE! Super-Resolution',
+        toolName: 'ENHANCE! AI Scaler',
         category: 'image',
-        prompt: `Super-Resolution ${upscaleFactor} (${result.width}x${result.height}px)`,
+        prompt: `AI Scaler ${upscaleFactor} (${result.width}x${result.height}px from ${result.originalWidth}x${result.originalHeight}px)`,
         outputPreview: result.enhancedDataUrl,
         status: 'success',
       });
       showToast(`Enhanced image (${result.width}x${result.height}px) saved to Library!`, 'success');
     } catch (err: any) {
-      showToast(err.message || 'Super-resolution failed', 'error');
+      showToast(err.message || 'AI Enhancement failed', 'error');
     } finally {
       setIsEnhancing(false);
     }
@@ -447,7 +467,7 @@ export const ImageWorkspace: React.FC = () => {
                 </div>
 
                 <div className="space-y-2 pt-3 border-t border-white/10">
-                  <label className="text-xs font-semibold text-white/80 font-mono uppercase tracking-wider">Special Filters:</label>
+                  <label className="text-xs font-semibold text-white/80 font-mono uppercase tracking-wider">Special Filters & Matting:</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => setFilterMode('normal')}
@@ -458,12 +478,11 @@ export const ImageWorkspace: React.FC = () => {
                       Original
                     </button>
                     <button
-                      onClick={() => setFilterMode('remove_bg')}
-                      className={`p-2 rounded-xl text-xs font-mono uppercase tracking-wider transition-all ${
-                        filterMode === 'remove_bg' ? 'bg-amber-500 text-black font-bold' : 'bg-black/40 border border-white/10 text-white/60'
-                      }`}
+                      onClick={handleRemoveBackgroundAction}
+                      disabled={isRemovingBg}
+                      className="p-2 rounded-xl text-xs font-mono uppercase tracking-wider transition-all bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500 hover:text-black font-bold disabled:opacity-40"
                     >
-                      Remove BG
+                      {isRemovingBg ? 'Removing BG...' : 'Remove BG (AI)'}
                     </button>
                     <button
                       onClick={() => setFilterMode('grayscale')}
@@ -524,10 +543,10 @@ export const ImageWorkspace: React.FC = () => {
                 <div>
                   <h2 className="text-base font-serif italic text-white flex items-center gap-2">
                     <Zap className="w-4 h-4 text-amber-500" />
-                    <span>ENHANCE! Ultra-Resolution Neural Scaler</span>
+                    <span>ENHANCE! AI Image Scaler</span>
                   </h2>
                   <p className="text-xs text-white/50 leading-relaxed mt-1">
-                    Super-resolution upscaling while strictly preserving edge contours and geometric lines.
+                    AI-powered image enhancement and upscaling across 2x, 4x, and 8x factor presets.
                   </p>
                 </div>
 
@@ -562,12 +581,12 @@ export const ImageWorkspace: React.FC = () => {
                       {isEnhancing ? (
                         <>
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Resampling ({upscaleFactor})...</span>
+                          <span>Enhancing ({upscaleFactor})...</span>
                         </>
                       ) : (
                         <>
                           <Zap className="w-3.5 h-3.5" />
-                          <span>Execute {upscaleFactor} Super-Resolution</span>
+                          <span>Execute {upscaleFactor} AI Enhancement</span>
                         </>
                       )}
                     </button>
@@ -588,7 +607,7 @@ export const ImageWorkspace: React.FC = () => {
                     </div>
                     <div className="p-4 rounded-xl bg-black/40 border border-amber-500/30 space-y-2">
                       <div className="flex items-center justify-between text-[10px] font-mono text-amber-400 uppercase tracking-widest">
-                        <span>Upscaled ({upscaleFactor}) - Ultra Sharp</span>
+                        <span>Upscaled ({upscaleFactor} Target)</span>
                         {enhancedMetrics ? (
                           <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-[9px] font-bold">
                             {enhancedMetrics.width} x {enhancedMetrics.height} px
