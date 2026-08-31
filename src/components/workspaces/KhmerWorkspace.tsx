@@ -99,22 +99,29 @@ export const KhmerWorkspace: React.FC = () => {
   };
 
   const handleRunKhmerOcr = async () => {
+    if (!activeAsset || activeAsset.type !== 'image' || !activeAsset.dataUrl) {
+      showToast('Please select or upload an image containing Khmer text or inscriptions to scan.', 'warning');
+      return;
+    }
+
     setIsOcrProcessing(true);
     try {
       showToast('Khmer Epigraphy & Script OCR scanning image...', 'info');
-      if (activeAsset?.type === 'image') {
-        const result = await geminiService.analyzeVision(
-          activeAsset.dataUrl,
-          'Transcribe all Khmer text or stone inscriptions visible in this image into Unicode Khmer script. Provide Romanization and English translation.',
-          'khmer_ocr'
-        );
-        setOcrText(result);
-      } else {
-        await new Promise((r) => setTimeout(r, 1200));
-        setOcrText(
-          '【លទ្ធផលស្កេនអក្សរថ្មបុរាណ / Inscription OCR Result】\n\nអត្ថបទចារឹក៖ "ព្រះបាទសូរ្យវរ្ម័នទី២ ទ្រង់បានស្ថាបនាប្រាសាទនេះឡើងដើម្បីឧទ្ទិសថ្វាយព្រះវិស្ណុ"\n\nTransliteration: Preah Bat Suryavarman Ti Pi trong ban sthapana prasat nih leung daembei outdis thvay Preah Vishnu.\n\nTranslation: King Suryavarman II established this temple dedicated to Lord Vishnu.'
-        );
-      }
+      const result = await geminiService.analyzeVision(
+        activeAsset.dataUrl,
+        'Transcribe all Khmer text or stone inscriptions visible in this image into Unicode Khmer script. Provide Romanization and English translation.',
+        'khmer_ocr'
+      );
+      setOcrText(result);
+
+      addHistoryRecord({
+        toolId: 'khmer-ocr',
+        toolName: 'Khmer Inscription OCR',
+        category: 'khmer',
+        prompt: `Scan Khmer inscription from: ${activeAsset.name}`,
+        outputText: result,
+        status: 'success',
+      });
       showToast('Khmer OCR completed!', 'success');
     } catch (err: any) {
       showToast(err.message || 'OCR failed', 'error');
