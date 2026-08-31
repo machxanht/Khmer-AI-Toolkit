@@ -51,22 +51,8 @@ app.post("/api/gemini/command", async (req: Request, res: Response) => {
     const ai = getGeminiClient();
 
     if (!ai) {
-      // Fallback intent planning if API key is not configured yet
-      return res.json({
-        intent: "Workflow Plan",
-        summary: `Executing plan for: "${prompt}"`,
-        confidence: 0.9,
-        steps: [
-          {
-            stepNumber: 1,
-            toolId: prompt.toLowerCase().includes("upscale") ? "enhance" : prompt.toLowerCase().includes("khmer") ? "khmer-translate" : "nano-banana",
-            toolName: prompt.toLowerCase().includes("upscale") ? "ENHANCE!" : prompt.toLowerCase().includes("khmer") ? "Khmer Translator" : "Nano Banana",
-            action: "Process input asset with specified parameters",
-            params: { mode: "smart-process", prompt },
-            expectedOutput: "Processed digital asset or text result",
-          },
-        ],
-        targetWorkspace: prompt.toLowerCase().includes("khmer") ? "khmer" : prompt.toLowerCase().includes("video") ? "video" : "image",
+      return res.status(400).json({
+        error: "GEMINI_API_KEY is not configured. Please add your API key in Settings.",
       });
     }
 
@@ -197,12 +183,8 @@ app.post("/api/gemini/prompt-assistant", async (req: Request, res: Response) => 
     const ai = getGeminiClient();
 
     if (!ai) {
-      return res.json({
-        rawPrompt,
-        interpretation: "Standard direct prompt execution",
-        improvedPrompt: rawPrompt,
-        negativePrompt: "low quality, distorted, watermark",
-        suggestedParameters: { steps: 30, guidanceScale: 7.5 },
+      return res.status(400).json({
+        error: "GEMINI_API_KEY is not configured. Please add your API key in Settings.",
       });
     }
 
@@ -345,13 +327,22 @@ Return in structured JSON format with this exact schema:
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-transcribe",
-      contents: { parts: [audioPart, { text: promptText }] },
-      config: {
-        responseMimeType: "application/json",
-      },
+      contents: [
+        audioPart,
+        promptText,
+      ],
     });
 
-    res.json(JSON.parse(response.text || "{}"));
+    const rawText = response.text || "";
+    let parsed: any = {};
+    try {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { fullTranscript: rawText };
+    } catch {
+      parsed = { fullTranscript: rawText };
+    }
+
+    res.json(parsed);
   } catch (err: any) {
     console.error("Error in /api/gemini/transcribe:", err);
     res.status(500).json({ error: err.message || "Transcription failed" });
