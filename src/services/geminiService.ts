@@ -29,53 +29,16 @@ export const geminiService = {
     currentWorkspace: string,
     activeFile?: { name: string; type: string } | null
   ): Promise<AgentPlan> {
-    try {
-      const res = await fetch('/api/gemini/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, currentWorkspace, activeFile }),
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to plan command');
-      }
-      return await res.json();
-    } catch (err: any) {
-      console.warn('Falling back to local heuristic plan:', err);
-      const isKhmer = /khmer|ខ្មែរ|angkor|apsara/i.test(prompt);
-      const isImage = /image|photo|picture|upscale|crop|enhance|background/i.test(prompt);
-      const isVideo = /video|clip|motion|animate/i.test(prompt);
-      const isAudio = /audio|sound|voice|speech|music|transcribe/i.test(prompt);
-      const isDoc = /doc|pdf|manual|wiki|search/i.test(prompt);
-      const isLearn = /tutor|flashcard|quiz|learn|study/i.test(prompt);
-
-      let targetWorkspace = 'ai' as any;
-      if (isKhmer) targetWorkspace = 'khmer';
-      else if (isImage) targetWorkspace = 'image';
-      else if (isVideo) targetWorkspace = 'video';
-      else if (isAudio) targetWorkspace = 'audio';
-      else if (isDoc) targetWorkspace = 'documents';
-      else if (isLearn) targetWorkspace = 'learning';
-
-      return {
-        intent: `Process request: ${prompt.slice(0, 50)}...`,
-        summary: `Orchestrating dedicated tools in the ${targetWorkspace.toUpperCase()} toolkit to fulfill your request.`,
-        confidence: 0.92,
-        targetWorkspace,
-        steps: [
-          {
-            stepNumber: 1,
-            toolId: isImage ? 'enhance' : isKhmer ? 'khmer-lang' : 'versatile-agent',
-            toolName: isImage ? 'ENHANCE! Ultra-Resolution' : isKhmer ? 'Khmer Language Specialist' : 'Versatile Execution Agent',
-            action: 'Execute core analysis and transformation pipeline',
-            params: { prompt },
-            expectedOutput: 'High quality processed output',
-            status: 'pending',
-          },
-        ],
-        improvedPrompt: prompt,
-      };
+    const res = await fetch('/api/gemini/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, currentWorkspace, activeFile }),
+    });
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to plan command with Gemini AI');
     }
+    return await res.json();
   },
 
   async generateText(prompt: string, systemInstruction?: string, temperature = 0.7): Promise<string> {
@@ -147,22 +110,14 @@ export const geminiService = {
     functionDeclarations: any[],
     activeAsset?: any
   ): Promise<{ text: string; functionCalls: Array<{ name: string; args: any; id?: string }> }> {
-    try {
-      const res = await fetch('/api/gemini/function-call', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, functionDeclarations, activeAsset }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Function calling failed');
-      return data;
-    } catch (err: any) {
-      console.warn('Native function calling request failed:', err);
-      return {
-        text: `Executed local workflow analysis for: "${prompt}"`,
-        functionCalls: [],
-      };
-    }
+    const res = await fetch('/api/gemini/function-call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, functionDeclarations, activeAsset }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Function calling failed');
+    return data;
   },
 
   async getEmbeddings(text: string): Promise<{ embedding: number[]; dimension: number }> {

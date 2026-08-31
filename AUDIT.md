@@ -1,6 +1,6 @@
 # Khmer AI Toolkit — Real Implementation Audit Report
 
-**Audit Timestamp:** 2026-08-31T10:54:13-07:00  
+**Audit Timestamp:** 2026-08-31T11:15:30-07:00  
 **Target Repository:** `machxanht/Khmer-AI-Toolkit`  
 **Branch:** `main`  
 **Auditor:** AI Studio Senior Verification Engine  
@@ -13,12 +13,12 @@ This document represents the living, persistent handoff audit for all capabiliti
 
 ### Strict Verification Rules Applied:
 1. **Zero Metadata Bias:** No capability is marked `REAL` based merely on flags (`isMock: false`) or claims.
-2. **Zero Fake Fallbacks:** APIs that fail or lack required credentials return strict errors rather than simulated/canned data.
+2. **Zero Fake Fallbacks:** APIs that fail or lack required credentials return strict errors rather than simulated/canned data. Removed legacy fallback strings (e.g., "Executed local workflow analysis...").
 3. **True Execution Trace:** Every tool has been audited end-to-end: UI $\rightarrow$ Workspace Context $\rightarrow$ `toolRegistry` $\rightarrow$ `geminiService` / Local Engine $\rightarrow$ Express Server API (`/api/*`) $\rightarrow$ `@google/genai` SDK $\rightarrow$ Return Data $\rightarrow$ Library / Active Asset / History.
 4. **Transparent Status Taxonomy:**
    - `REAL`: End-to-end executable path to a live AI model or backend service with verified input/output contract.
    - `LOCAL`: Fully deterministic, authentic client-side algorithmic engine (e.g., HTML5 Canvas, Web Audio API, Khmer linguistic rules).
-   - `PARTIAL`: Real backend/model execution with specific environmental constraints or dependencies.
+   - `PARTIAL`: Real backend/model execution with specific environmental constraints or dependencies (e.g. preview access).
    - `UNAVAILABLE`: API requiring specific third-party credentials or preview flags currently unconfigured.
    - `MOCK`: Non-functional simulation or hardcoded response (Target count: 0).
 
@@ -30,7 +30,7 @@ This document represents the living, persistent handoff audit for all capabiliti
 
 | Tool ID | Status | Model / Engine | Execution Chain | Library / ActiveAsset Flow | Function Calling & Workflow |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Nano Banana (`nano_banana_generate`)** | `REAL` | `gemini-3.1-flash-lite-image` | UI $\rightarrow$ `ImageWorkspace` $\rightarrow$ `geminiService.generateImage` $\rightarrow$ `POST /api/image/generate` $\rightarrow$ `@google/genai` (`generateImages`) | Direct base64 PNG output saved to Library and set as `activeAsset`. | Supported with prompt and aspect ratio parameters. |
+| **Nano Banana (`nano_banana_generate`)** | `REAL` | `gemini-3.1-flash-lite-image` | UI $\rightarrow$ `ImageWorkspace` $\rightarrow$ `geminiService.generateImage` $\rightarrow$ `POST /api/image/generate` $\rightarrow$ `@google/genai` | Direct base64 PNG output saved to Library and set as `activeAsset`. | Supported with prompt and aspect ratio parameters. |
 | **ENHANCE! Scaler (`image_enhance`)** | `REAL` | `gemini-3.1-flash-lite-image` | UI $\rightarrow$ `ImageWorkspace` $\rightarrow$ `toolRegistry` $\rightarrow$ `geminiService.enhanceImage` $\rightarrow$ `POST /api/image/enhance` | Real image returned, actual image dimensions calculated from natural dimensions, added to Library. | Supported with factor preset (`2x`, `4x`, `8x`). |
 | **Background Removal (`image_remove_background`)** | `REAL` | `gemini-3.1-flash-lite-image` (AI Matting) | UI $\rightarrow$ `ImageWorkspace` $\rightarrow$ `geminiService.removeBackground` $\rightarrow$ `POST /api/image/remove-background` | PNG with alpha transparency generated, saved as `(Cutout).png` asset in Library. | Supported via activeAsset context propagation. |
 | **Pixshop Local Filters (`pixshop`)** | `LOCAL` | HTML5 Canvas 2D Context | UI $\rightarrow$ `ImageWorkspace` $\rightarrow$ Local Canvas Pixel Pipeline (`brightness`, `contrast`, `saturation`, `grayscale`, `sepia`) | Live canvas rendering, exports full-res PNG directly to Library. | Supported as a deterministic image processing step. |
@@ -53,7 +53,7 @@ This document represents the living, persistent handoff audit for all capabiliti
 | Tool ID | Status | Model / Engine | Execution Chain | Library / ActiveAsset Flow | Function Calling & Workflow |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **EchoScript Diarization (`audio_diarize`)** | `REAL` | `gemini-3.5-transcribe` | UI $\rightarrow$ `AudioWorkspace` $\rightarrow$ `geminiService.transcribeAudio` $\rightarrow$ `POST /api/audio/transcribe` | Real audio file bytes sent with structured schema; returns speaker turns, timestamps, and translation. | Callable with audio asset context. |
-| **Lyria 3 Music Studio (`lyria_compose`)** | `REAL` / `LOCAL` | `gemini-3.6-flash` + Web Audio Synthesizer Engine | UI $\rightarrow$ `AudioWorkspace` $\rightarrow$ `geminiService.composeMusic` $\rightarrow$ `POST /api/music/compose` $\rightarrow$ AudioBuffer WAV synthesis | Generates composition arrangement, generates real playable master audio WAV, saved to Library. | Supported with genre and tempo parameters. |
+| **Lyria 3 Music Studio (`lyria_compose`)** | `PARTIAL` | `lyria-3-clip-preview` / `gemini-3.6-flash` | UI $\rightarrow$ `AudioWorkspace` $\rightarrow$ `geminiService.generateMusic` $\rightarrow$ `POST /api/gemini/generate-music` | Streamed audio chunks decoded into playable WAV. Requires Lyria preview model access. | Classified accurately as PARTIAL due to preview model gating. |
 
 ---
 
@@ -64,7 +64,7 @@ This document represents the living, persistent handoff audit for all capabiliti
 | **Chuon Nath Dictionary (`khmer_chuon_nath`)** | `REAL` | `gemini-3.6-flash` | UI $\rightarrow$ `KhmerWorkspace` $\rightarrow$ `geminiService.lookupChuonNath` $\rightarrow$ `POST /api/khmer/chuon-nath` | Returns etymology, Pali/Sanskrit roots, word class, full definition, and usage examples. | Supported in Workflow and Agent tool calling. |
 | **Khmer Phonology Matrix (`khmer_phonology`)** | `LOCAL` | Structured Linguistic Database + Web Speech API | Client-side phonology data matrix (`consonants33`, `A/O series`, `subscripts`) with real-time phonetic rendering | Immediate deterministic acoustic and orthographic lookup. | Supported locally. |
 | **Document QA & Citations (`doc_qa`)** | `REAL` | `gemini-3.6-flash` | UI $\rightarrow$ `DocumentsWorkspace` $\rightarrow$ `geminiService.queryDocument` $\rightarrow$ `POST /api/docs/qa` | Reads uploaded document plain text / markdown / PDF text, returns grounded answers with exact source citations. | Supported in multi-turn assistant and workflows. |
-| **Vector Embeddings (`text_embedding`)** | `REAL` | `text-embedding-004` | UI $\rightarrow$ `DocumentsWorkspace` $\rightarrow$ `geminiService.generateEmbeddings` $\rightarrow$ `POST /api/embeddings` | Returns 768-dimensional float vectors, performs cosine similarity calculations across library docs. | Supported for semantic clustering and search. |
+| **Vector Embeddings (`text_embedding`)** | `REAL` | `gemini-embedding-2` | UI $\rightarrow$ `DocumentsWorkspace` $\rightarrow$ `geminiService.generateEmbeddings` $\rightarrow$ `POST /api/embeddings` | Returns high-dimensional float vectors (dimension dynamically matched from model response), performs cosine similarity calculations across library docs. | Supported for semantic clustering and search. |
 | **Infinite Wiki (`infinite_wiki`)** | `REAL` | `gemini-3.6-flash` | UI $\rightarrow$ `DocumentsWorkspace` $\rightarrow$ `geminiService.generateWikiArticle` $\rightarrow$ `POST /api/wiki/generate` | Generates encyclopedia-grade articles in Markdown, downloadable and persistable to Library. | Supported in Agent planning and workflow steps. |
 
 ---
@@ -81,22 +81,22 @@ This document represents the living, persistent handoff audit for all capabiliti
 
 ## 3. Files Changed & Audit History
 
-### Current Audit Modifications:
-1. `src/components/workspaces/KhmerWorkspace.tsx`:
+### Targeted Audit Fixes Applied:
+1. `src/services/geminiService.ts`:
+   - Removed fake fallback response in `runFunctionCall` (eliminated `"Executed local workflow analysis for..."`).
+   - Removed heuristic fake success fallback in `planCommand`; now strictly throws and displays server API failure states.
+2. `src/components/workspaces/KhmerWorkspace.tsx`:
    - Enforced strict image asset verification for Inscription OCR.
    - Removed placeholder timeout simulation.
    - Wired live asset history recording upon successful OCR completion.
-2. `src/services/toolRegistry.ts`:
-   - Removed outdated claims of Laplacian convolution in favor of AI neural super-resolution metadata.
-   - Fixed dimension calculation logic to use true natural image bounds.
-   - Aligned background removal tool to transparent AI matting pipeline.
-3. `src/components/workspaces/ImageWorkspace.tsx`:
+3. `src/services/toolRegistry.ts`:
+   - Aligned dimension calculation logic to use true natural image bounds.
+   - Removed legacy references and verified transparent AI matting metadata.
+4. `src/components/workspaces/ImageWorkspace.tsx`:
+   - Verified real pixel measurement for ENHANCE 2x/4x/8x without synthetic calculation.
    - Updated AI matting button with explicit asynchronous action handler and loading feedback.
-   - Synchronized UI labels with authentic model capabilities.
-4. `src/services/defaultTools.ts`:
-   - Synchronized tool badge definitions and required model tags (`gemini-3.1-flash-lite-image`).
 5. `AUDIT.md`:
-   - Initialized the root audit and verification document.
+   - Re-synchronized persistent audit handoff report.
 
 ---
 
@@ -113,4 +113,4 @@ This document represents the living, persistent handoff audit for all capabiliti
 
 1. **Gemini API Key:** Server routes securely read `process.env.GEMINI_API_KEY`. If the key is not provided in production environment settings, the server returns informative HTTP 400/500 JSON errors caught cleanly by client UI toasts.
 2. **Veo Model Access:** Veo video generation requires project-level enablement of the `veo-3.1-generate-video` endpoint. When restricted by project quotas or region, the error is accurately reported to the user without simulated fallbacks.
-3. **Web Audio Fallback:** Lyria compositions utilize Gemini 3.6 Flash for algorithmic music arrangement and synthesize high-fidelity polyphonic AudioBuffer waveforms directly in the browser.
+3. **Lyria Model Access:** Lyria music generation connects to the `lyria-3-clip-preview` endpoint. It is classified as `PARTIAL` because access depends on specific project-level preview grants.
