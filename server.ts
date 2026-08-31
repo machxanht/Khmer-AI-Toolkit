@@ -1,7 +1,7 @@
 import express, { Request, Response } from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, GenerateVideosOperation, Modality } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -9,8 +9,8 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 
 // Initialize Gemini SDK with User-Agent header as required
 function getGeminiClient(): GoogleGenAI | null {
@@ -307,23 +307,40 @@ app.post("/api/gemini/transcribe", async (req: Request, res: Response) => {
       });
     }
 
+    if (!audioBase64 || typeof audioBase64 !== "string" || audioBase64.trim() === "") {
+      return res.status(400).json({
+        error: "No audio file or stream provided. EchoScript requires an authentic audio recording.",
+      });
+    }
+
     const cleanBase64 = audioBase64.replace(/^data:audio\/\w+;base64,/, "");
 
     const audioPart = {
       inlineData: {
         data: cleanBase64,
-        mimeType,
+        mimeType: mimeType || "audio/mp3",
       },
     };
 
-    const promptText = `Transcribe this audio precisely. Identify different speakers (Speaker 1, Speaker 2, etc.), provide timestamps if discernable, and note emotional tone or background audio nuances. If Khmer or multilingual audio is detected, include both the original transcription and English/Vietnamese translation. Output in JSON:
+    const promptText = `Perform authoritative multi-speaker transcription and diarization on this audio recording.
+Identify distinct speaker turns (Speaker 1, Speaker 2, etc.) with exact timestamps [MM:SS - MM:SS].
+Capture spoken Khmer and English dialogue accurately.
+Return in structured JSON format with this exact schema:
 {
-  "language": "Identified language",
-  "fullTranscript": "Complete text",
-  "segments": [
-    { "speaker": "Speaker 1", "time": "0:00", "text": "Segment text", "sentiment": "neutral" }
+  "detectedLanguage": "e.g. Khmer / English (Bilingual)",
+  "confidence": 0.98,
+  "speakerCount": 2,
+  "speakers": [
+    {
+      "speaker": "Speaker 1 (Title / Role)",
+      "timestamp": "00:00 - 00:04",
+      "text": "Exact transcribed speech",
+      "english": "English translation if spoken in Khmer",
+      "sentiment": "Tone/attitude"
+    }
   ],
-  "summary": "Key points summarized"
+  "fullTranscript": "Complete chronological transcript",
+  "summary": "Key highlights and summary of dialogue"
 }`;
 
     const response = await ai.models.generateContent({
@@ -492,6 +509,128 @@ app.post("/api/gemini/generate-image", async (req: Request, res: Response) => {
   }
 });
 
+// 10b. Real Neural Super-Resolution (ENHANCE!)
+app.post("/api/gemini/enhance-image", async (req: Request, res: Response) => {
+  try {
+    const { imageBase64, factor = "2x", mimeType = "image/png" } = req.body;
+    const ai = getGeminiClient();
+
+    if (!ai) {
+      return res.status(400).json({
+        error: "GEMINI_API_KEY is required for Neural Super-Resolution.",
+      });
+    }
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: "No input image provided for neural super-resolution." });
+    }
+
+    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+
+    const parts: any[] = [
+      {
+        inlineData: {
+          data: cleanBase64,
+          mimeType: mimeType || "image/png",
+        },
+      },
+      {
+        text: `Neural Super-Resolution & Ultra-HD Detail Upscaling: Perform genuine neural super-resolution enhancement at ${factor} scaling factor. Sharpen fine edges, recover sub-pixel textures, remove compression noise and blur, enhance depth and contrast, and preserve exact subject geometry and colors with razor-sharp photorealistic clarity.`,
+      },
+    ];
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-lite-image",
+      contents: { parts },
+    });
+
+    let imageUrl: string | null = null;
+    let textOutput = "";
+
+    const candidateParts = response.candidates?.[0]?.content?.parts || [];
+    for (const part of candidateParts) {
+      if (part.inlineData?.data) {
+        const mime = part.inlineData.mimeType || "image/png";
+        imageUrl = `data:${mime};base64,${part.inlineData.data}`;
+      } else if (part.text) {
+        textOutput += part.text + " ";
+      }
+    }
+
+    if (!imageUrl) {
+      return res.status(422).json({
+        error: "Super-resolution model did not return image data. Output: " + (textOutput || "No output"),
+      });
+    }
+
+    res.json({ imageUrl, text: textOutput.trim(), factor });
+  } catch (err: any) {
+    console.error("Error in /api/gemini/enhance-image:", err);
+    res.status(500).json({ error: err.message || "Neural super-resolution failed" });
+  }
+});
+
+// 10c. Real AI Background Segmentation & Matting
+app.post("/api/gemini/remove-background", async (req: Request, res: Response) => {
+  try {
+    const { imageBase64, mimeType = "image/png" } = req.body;
+    const ai = getGeminiClient();
+
+    if (!ai) {
+      return res.status(400).json({
+        error: "GEMINI_API_KEY is required for Background Segmentation.",
+      });
+    }
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: "No input image provided for background segmentation." });
+    }
+
+    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+
+    const parts: any[] = [
+      {
+        inlineData: {
+          data: cleanBase64,
+          mimeType: mimeType || "image/png",
+        },
+      },
+      {
+        text: "Precise AI Foreground Segmentation & Cutout Matting: Segment the primary foreground subject(s) with pristine edge boundaries. Completely eliminate and erase 100% of background scenery, sky, shadows, and environment, rendering a pure alpha transparent background (PNG). Preserve fine hair, fur, textiles, and semi-transparent edges accurately.",
+      },
+    ];
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-lite-image",
+      contents: { parts },
+    });
+
+    let imageUrl: string | null = null;
+    let textOutput = "";
+
+    const candidateParts = response.candidates?.[0]?.content?.parts || [];
+    for (const part of candidateParts) {
+      if (part.inlineData?.data) {
+        const mime = part.inlineData.mimeType || "image/png";
+        imageUrl = `data:${mime};base64,${part.inlineData.data}`;
+      } else if (part.text) {
+        textOutput += part.text + " ";
+      }
+    }
+
+    if (!imageUrl) {
+      return res.status(422).json({
+        error: "Background segmentation model did not return image data. Output: " + (textOutput || "No output"),
+      });
+    }
+
+    res.json({ imageUrl, text: textOutput.trim() });
+  } catch (err: any) {
+    console.error("Error in /api/gemini/remove-background:", err);
+    res.status(500).json({ error: err.message || "Background removal failed" });
+  }
+});
+
 // 11. Multimodal Video Keyframe Timeline Analyzer
 app.post("/api/gemini/video-analyze", async (req: Request, res: Response) => {
   try {
@@ -505,11 +644,11 @@ app.post("/api/gemini/video-analyze", async (req: Request, res: Response) => {
     }
 
     if (!frames || !Array.isArray(frames) || frames.length === 0) {
-      return res.status(400).json({ error: "No video keyframes provided for analysis." });
+      return res.status(400).json({ error: "No video keyframes provided. Please upload an authentic video file to analyze." });
     }
 
     const contentsParts: any[] = [];
-    const selectedFrames = frames.slice(0, 8);
+    const selectedFrames = frames.slice(0, 10);
 
     selectedFrames.forEach((frame: any, idx: number) => {
       const cleanBase64 = (typeof frame === 'string' ? frame : frame.dataUrl || frame.data).replace(/^data:image\/\w+;base64,/, "");
@@ -519,7 +658,7 @@ app.post("/api/gemini/video-analyze", async (req: Request, res: Response) => {
           mimeType: "image/jpeg",
         },
       });
-      const timeLabel = frame.timestamp !== undefined ? `${frame.timestamp.toFixed(1)}s` : `Frame ${idx + 1}`;
+      const timeLabel = frame.timestamp !== undefined ? `${Number(frame.timestamp).toFixed(1)}s` : `Frame ${idx + 1}`;
       contentsParts.push({
         text: `[Video Keyframe ${idx + 1} at timestamp ${timeLabel}]`,
       });
@@ -564,7 +703,7 @@ Output in structured JSON:
   }
 });
 
-// 12. Veo Video Generation API
+// 12a. Veo Video Generation Initiation
 app.post("/api/gemini/generate-video", async (req: Request, res: Response) => {
   try {
     const { prompt, aspectRatio = "16:9", resolution = "1080p" } = req.body;
@@ -589,7 +728,7 @@ app.post("/api/gemini/generate-video", async (req: Request, res: Response) => {
     res.json({
       operationName: (operation as any).name,
       status: "processing",
-      message: "Veo video generation operation registered with Google GenAI.",
+      message: "Veo video generation operation initiated.",
     });
   } catch (err: any) {
     console.error("Error in /api/gemini/generate-video:", err);
@@ -597,7 +736,91 @@ app.post("/api/gemini/generate-video", async (req: Request, res: Response) => {
   }
 });
 
-// 13. Lyria Music Generation API
+// 12b. Veo Video Status Polling
+app.post("/api/gemini/video-status", async (req: Request, res: Response) => {
+  try {
+    const { operationName } = req.body;
+    const ai = getGeminiClient();
+
+    if (!ai) {
+      return res.status(400).json({ error: "GEMINI_API_KEY is required." });
+    }
+
+    if (!operationName) {
+      return res.status(400).json({ error: "operationName is required for status polling." });
+    }
+
+    const op = new GenerateVideosOperation();
+    op.name = operationName;
+
+    const updated = await ai.operations.getVideosOperation({ operation: op });
+
+    res.json({
+      done: Boolean(updated.done),
+      error: updated.error || null,
+      metadata: updated.metadata || null,
+    });
+  } catch (err: any) {
+    console.error("Error in /api/gemini/video-status:", err);
+    res.status(500).json({ error: err.message || "Failed to poll video operation status" });
+  }
+});
+
+// 12c. Veo Video Stream/Download & Base64 Converter
+app.post("/api/gemini/video-download", async (req: Request, res: Response) => {
+  try {
+    const { operationName } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    const ai = getGeminiClient();
+
+    if (!ai || !apiKey) {
+      return res.status(400).json({ error: "GEMINI_API_KEY is required." });
+    }
+
+    if (!operationName) {
+      return res.status(400).json({ error: "operationName is required for video download." });
+    }
+
+    const op = new GenerateVideosOperation();
+    op.name = operationName;
+
+    const updated = await ai.operations.getVideosOperation({ operation: op });
+
+    if (!updated.done) {
+      return res.status(409).json({ error: "Video operation is still processing. Please continue polling." });
+    }
+
+    const uri = updated.response?.generatedVideos?.[0]?.video?.uri;
+    if (!uri) {
+      return res.status(404).json({ error: "Video download URI not available from completed operation." });
+    }
+
+    // Fetch video bytes using Google GenAI authorized headers
+    const videoRes = await fetch(uri, {
+      headers: { "x-goog-api-key": apiKey },
+    });
+
+    if (!videoRes.ok) {
+      throw new Error(`Failed to fetch video stream from Google API: ${videoRes.statusText}`);
+    }
+
+    const arrayBuffer = await videoRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64 = buffer.toString("base64");
+    const videoDataUrl = `data:video/mp4;base64,${base64}`;
+
+    res.json({
+      videoDataUrl,
+      mimeType: "video/mp4",
+      sizeBytes: buffer.length,
+    });
+  } catch (err: any) {
+    console.error("Error in /api/gemini/video-download:", err);
+    res.status(500).json({ error: err.message || "Failed to retrieve completed video" });
+  }
+});
+
+// 13. Lyria 3 Music Generation API
 app.post("/api/gemini/generate-music", async (req: Request, res: Response) => {
   try {
     const { prompt } = req.body;
@@ -609,9 +832,13 @@ app.post("/api/gemini/generate-music", async (req: Request, res: Response) => {
       });
     }
 
+    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+      return res.status(400).json({ error: "Prompt is required for Lyria music synthesis." });
+    }
+
     const response = await ai.models.generateContentStream({
       model: "lyria-3-clip-preview",
-      contents: prompt || "Traditional Cambodian Roneat Ek xylophone with ambient lo-fi beat",
+      contents: prompt,
     });
 
     let audioBase64 = "";
@@ -640,7 +867,7 @@ app.post("/api/gemini/generate-music", async (req: Request, res: Response) => {
 
     res.json({
       audioDataUrl: `data:${mimeType};base64,${audioBase64}`,
-      lyrics,
+      lyrics: lyrics.trim() || undefined,
       mimeType,
     });
   } catch (err: any) {

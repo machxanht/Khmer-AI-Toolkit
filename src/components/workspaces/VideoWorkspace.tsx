@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { ALL_TOOLS } from '../../services/defaultTools';
 import { ToolCard } from '../common/ToolCard';
@@ -20,6 +20,7 @@ import {
   CheckCircle,
   Eye,
   Scan,
+  Upload,
 } from 'lucide-react';
 
 export const VideoWorkspace: React.FC = () => {
@@ -44,13 +45,17 @@ export const VideoWorkspace: React.FC = () => {
   const [cameraMotion, setCameraMotion] = useState('pan_right');
   const [isGenerating, setIsGenerating] = useState(false);
   const [videoGenerated, setVideoGenerated] = useState(false);
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [videoStatusMessage, setVideoStatusMessage] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Video analysis state
   const [analysisPrompt, setAnalysisPrompt] = useState('Perform comprehensive narrative and temporal scene breakdown with OCR detection');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [extractedFrames, setExtractedFrames] = useState<Array<{ dataUrl: string; timestamp: number }>>([]);
   const [analysisResult, setAnalysisResult] = useState<any | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Type Motion typography state
   const [animatedText, setAnimatedText] = useState('KHMER INNOVATION');
@@ -58,17 +63,25 @@ export const VideoWorkspace: React.FC = () => {
 
   const handleGenerateVideo = async () => {
     setIsGenerating(true);
+    setVideoStatusMessage('Submitting video job to Google Veo 3.1...');
     try {
       showToast(`Veo Studio synthesizing cinematic motion sequence with Veo 3.1 Lite...`, 'info');
-      const result = await geminiService.generateVideo(videoPrompt, '16:9', '1080p');
+      const result = await geminiService.generateVideoWithPolling(
+        videoPrompt,
+        '16:9',
+        '1080p',
+        (status) => setVideoStatusMessage(status)
+      );
+
       setVideoGenerated(true);
-      setVideoStatusMessage(result.message || 'Veo video rendered successfully');
+      setGeneratedVideoUrl(result.videoUrl);
+      setVideoStatusMessage('Veo video synthesis complete!');
 
       const saved = addAsset({
-        name: `Veo Video - ${videoPrompt.slice(0, 20)}`,
-        dataUrl: result.videoUrl || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1000&auto=format&fit=crop&q=80',
+        name: `Veo Video - ${videoPrompt.slice(0, 24)}.mp4`,
+        dataUrl: result.videoUrl,
         type: 'video',
-        mimeType: 'video/mp4',
+        mimeType: result.mimeType || 'video/mp4',
         tags: ['veo', 'video-studio', 'cinematic'],
       });
       setActiveAsset(saved);
@@ -78,26 +91,58 @@ export const VideoWorkspace: React.FC = () => {
         toolName: 'Veo Video Studio',
         category: 'video',
         prompt: videoPrompt,
-        settings: { motionIntensity, cameraMotion, resolution: '1080p', status: result.status },
+        settings: { motionIntensity, cameraMotion, resolution: '1080p' },
         status: 'success',
       });
-      showToast('Video motion sequence rendered & saved to Library!', 'success');
+      showToast('Authentic Veo video rendered & saved to Library!', 'success');
     } catch (err: any) {
+      setVideoStatusMessage(`Error: ${err.message}`);
       showToast(err.message || 'Video generation failed', 'error');
     } finally {
       setIsGenerating(false);
     }
   };
 
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      showToast(`Loading video "${file.name}"...`, 'info');
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const newAsset = addAsset({
+          name: file.name,
+          dataUrl,
+          type: 'video',
+          mimeType: file.type || 'video/mp4',
+          sizeBytes: file.size,
+          tags: ['uploaded', 'video'],
+        });
+        setActiveAsset(newAsset);
+        showToast(`Video "${file.name}" loaded into workspace & Library!`, 'success');
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to read video file', 'error');
+    }
+  };
+
   const handleAnalyzeVideo = async () => {
+    if (!activeAsset || activeAsset.type !== 'video' || !activeAsset.dataUrl) {
+      showToast('Please select or upload an authentic video file to analyze.', 'warning');
+      return;
+    }
+
     setIsAnalyzing(true);
     try {
-      showToast('Executing multimodal scene analysis and OCR detection...', 'info');
-      const sampleFrames = activeAsset?.dataUrl
-        ? [{ dataUrl: activeAsset.dataUrl, timestamp: 0.0 }]
-        : [{ dataUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=600&auto=format&fit=crop&q=80', timestamp: 0.0 }];
+      showToast('Extracting temporal keyframes from video stream...', 'info');
+      const frames = await geminiService.extractVideoKeyframes(activeAsset.dataUrl, 6);
+      setExtractedFrames(frames);
 
-      const analysis = await geminiService.analyzeVideoFrames(sampleFrames, analysisPrompt);
+      showToast(`Analyzing ${frames.length} keyframes with Gemini 3.6 Flash...`, 'info');
+      const analysis = await geminiService.analyzeVideoFrames(frames, analysisPrompt);
       setAnalysisResult(analysis);
 
       addHistoryRecord({
@@ -229,33 +274,39 @@ export const VideoWorkspace: React.FC = () => {
                 </button>
               </div>
 
-              {/* Video Player Mockup */}
+              {/* Real Video Player & Playback Canvas */}
               <div className="p-6 rounded-2xl bg-white/5 border border-white/10 flex flex-col justify-between space-y-4 shadow-xl">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-white/80 uppercase tracking-widest font-mono">
-                    Cinematic Preview
+                    Authentic Video Output
                   </h3>
-                  <span className="text-xs text-amber-400 font-mono">1080p 24fps</span>
+                  <span className="text-xs text-amber-400 font-mono">1080p MP4</span>
                 </div>
 
-                <div className="relative flex-1 min-h-[300px] rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden group">
-                  <img
-                    src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1000&auto=format&fit=crop&q=80"
-                    alt="Video backdrop"
-                    referrerPolicy="no-referrer"
-                    className={`w-full h-full object-cover transition-transform duration-1000 ${
-                      isPlaying ? 'scale-110 translate-x-2' : ''
-                    }`}
-                  />
-
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center backdrop-blur-[2px]">
-                    <button
-                      onClick={() => setIsPlaying(!isPlaying)}
-                      className="w-14 h-14 rounded-full bg-amber-500 text-black flex items-center justify-center shadow-2xl hover:scale-110 transition-transform"
-                    >
-                      {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
-                    </button>
+                {videoStatusMessage && (
+                  <div className="p-3 rounded-xl bg-black/40 border border-amber-500/20 text-xs font-mono text-amber-300">
+                    {videoStatusMessage}
                   </div>
+                )}
+
+                <div className="relative flex-1 min-h-[300px] rounded-xl bg-black/60 border border-white/10 flex items-center justify-center overflow-hidden">
+                  {generatedVideoUrl || (activeAsset && activeAsset.type === 'video') ? (
+                    <video
+                      ref={videoRef}
+                      src={generatedVideoUrl || activeAsset?.dataUrl}
+                      controls
+                      autoPlay
+                      playsInline
+                      className="w-full h-full max-h-[380px] object-contain rounded-xl"
+                    />
+                  ) : (
+                    <div className="text-center p-8 space-y-2">
+                      <Film className="w-10 h-10 text-white/20 mx-auto" />
+                      <p className="text-xs text-white/40 font-mono">
+                        No video generated yet. Click "Synthesize Veo Video" to run real Veo 3.1 generation.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -312,28 +363,79 @@ export const VideoWorkspace: React.FC = () => {
                     <span>Multimodal Video Timeline Analyzer</span>
                   </h2>
                   <p className="text-xs text-white/50 leading-relaxed mt-1">
-                    Powered by Gemini 3.6 Flash: extracts keyframe moments, transcribes inscriptions, and maps scene-by-scene timelines.
+                    Extracts authentic sequential video keyframes from MP4 files and performs deep scene-by-scene Gemini 3.6 Flash narration.
                   </p>
                 </div>
 
-                <button
-                  onClick={handleAnalyzeVideo}
-                  disabled={isAnalyzing}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50"
-                >
-                  {isAnalyzing ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Analyzing Multimodal Frames...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Scan className="w-3.5 h-3.5" />
-                      <span>Run Timeline Analysis</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="video/*"
+                    onChange={handleVideoUpload}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-mono text-xs uppercase tracking-wider transition-all"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Upload Video File</span>
+                  </button>
+
+                  <button
+                    onClick={handleAnalyzeVideo}
+                    disabled={isAnalyzing || !activeAsset || activeAsset.type !== 'video'}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-40"
+                  >
+                    {isAnalyzing ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Analyzing Multimodal Frames...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Scan className="w-3.5 h-3.5" />
+                        <span>Run Timeline Analysis</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
+
+              {/* Active Video Status */}
+              <div className="p-4 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Film className="w-5 h-5 text-amber-400" />
+                  <div>
+                    <span className="text-xs font-semibold text-white block">
+                      {activeAsset?.type === 'video' ? activeAsset.name : 'No video asset selected'}
+                    </span>
+                    <span className="text-[10px] text-white/40 font-mono">
+                      {activeAsset?.type === 'video' ? 'Ready for keyframe extraction' : 'Upload an MP4 or select one in the Library'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Extracted Keyframe Previews */}
+              {extractedFrames.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-[10px] font-mono text-white/50 uppercase tracking-wider">
+                    Extracted Temporal Keyframes ({extractedFrames.length} frames)
+                  </span>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {extractedFrames.map((frame, idx) => (
+                      <div key={idx} className="relative rounded-lg overflow-hidden border border-white/10 bg-black">
+                        <img src={frame.dataUrl} alt={`Keyframe ${idx + 1}`} className="w-full h-16 object-cover" />
+                        <span className="absolute bottom-1 right-1 bg-black/80 text-[9px] font-mono text-amber-300 px-1 rounded">
+                          {frame.timestamp.toFixed(1)}s
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-white/80 font-mono uppercase tracking-wider">Analysis Directive / Question:</label>
@@ -345,7 +447,7 @@ export const VideoWorkspace: React.FC = () => {
                 />
               </div>
 
-              {analysisResult ? (
+              {analysisResult && (
                 <div className="space-y-4 animate-in fade-in duration-200">
                   <div className="p-4 rounded-xl bg-black/50 border border-amber-500/30">
                     <span className="text-[10px] font-mono text-amber-400 uppercase tracking-widest block mb-1">Executive Summary</span>
@@ -373,27 +475,6 @@ export const VideoWorkspace: React.FC = () => {
                       </div>
                     </div>
                   )}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-2 text-xs">
-                    <div className="flex items-center justify-between text-amber-300 font-mono">
-                      <span className="font-bold">Scene 1 [00:00 - 00:04]</span>
-                      <span className="text-emerald-400">Confidence: 99.2%</span>
-                    </div>
-                    <p className="text-white/70 font-serif italic">
-                      "Establishing crane shot: Angkor Wat moat with morning reflection."
-                    </p>
-                  </div>
-                  <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-2 text-xs">
-                    <div className="flex items-center justify-between text-amber-300 font-mono">
-                      <span className="font-bold">Scene 2 [00:04 - 00:09]</span>
-                      <span className="text-emerald-400">Confidence: 98.6%</span>
-                    </div>
-                    <p className="text-white/70 font-serif italic">
-                      "Close-up stone bas-relief epigraphy carved on south gallery lintel."
-                    </p>
-                  </div>
                 </div>
               )}
             </div>

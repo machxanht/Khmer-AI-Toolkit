@@ -48,173 +48,58 @@ export interface RegisteredTool {
 }
 
 /**
- * Real Multi-Pass Super-Resolution & Ultra-Sharpness Convolution Resampler
+ * Real Neural Super-Resolution Scaler
  */
 export async function enhanceImageSuperResolution(
   dataUrl: string,
   factor: '2x' | '4x' | '8x' = '2x'
 ): Promise<{ enhancedDataUrl: string; width: number; height: number; originalWidth: number; originalHeight: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const scaleMultiplier = factor === '8x' ? 8 : factor === '4x' ? 4 : 2;
-      const origW = img.naturalWidth || img.width || 400;
-      const origH = img.naturalHeight || img.height || 400;
-      
-      const targetW = Math.min(origW * scaleMultiplier, 4096);
-      const targetH = Math.min(origH * scaleMultiplier, 4096);
+  try {
+    const result = await geminiService.enhanceImage(dataUrl, factor);
+    const enhancedDataUrl = result.imageUrl;
 
-      let currentCanvas = document.createElement('canvas');
-      currentCanvas.width = origW;
-      currentCanvas.height = origH;
-      let currentCtx = currentCanvas.getContext('2d');
-      if (!currentCtx) return reject(new Error('Canvas context unavailable'));
-      currentCtx.drawImage(img, 0, 0);
-
-      let currentW = origW;
-      let currentH = origH;
-
-      while (currentW < targetW || currentH < targetH) {
-        const nextW = Math.min(currentW * 2, targetW);
-        const nextH = Math.min(currentH * 2, targetH);
-
-        const nextCanvas = document.createElement('canvas');
-        nextCanvas.width = nextW;
-        nextCanvas.height = nextH;
-        const nextCtx = nextCanvas.getContext('2d');
-        if (!nextCtx) break;
-
-        nextCtx.imageSmoothingEnabled = true;
-        nextCtx.imageSmoothingQuality = 'high';
-        nextCtx.drawImage(currentCanvas, 0, 0, nextW, nextH);
-
-        currentCanvas = nextCanvas;
-        currentCtx = nextCtx;
-        currentW = nextW;
-        currentH = nextH;
-      }
-
-      // Apply Edge-Preserving Unsharp Mask Kernel Convolution on High-Res Canvas
-      const imgData = currentCtx.getImageData(0, 0, targetW, targetH);
-      const src = imgData.data;
-      const output = currentCtx.createImageData(targetW, targetH);
-      const dst = output.data;
-
-      for (let i = 0; i < src.length; i++) {
-        dst[i] = src[i];
-      }
-
-      const amount = factor === '8x' ? 0.35 : factor === '4x' ? 0.28 : 0.22;
-      for (let y = 1; y < targetH - 1; y++) {
-        for (let x = 1; x < targetW - 1; x++) {
-          const idx = (y * targetW + x) * 4;
-          for (let c = 0; c < 3; c++) {
-            const center = src[idx + c];
-            const up = src[((y - 1) * targetW + x) * 4 + c];
-            const down = src[((y + 1) * targetW + x) * 4 + c];
-            const left = src[(y * targetW + (x - 1)) * 4 + c];
-            const right = src[(y * targetW + (x + 1)) * 4 + c];
-
-            const laplacian = (center * 4) - up - down - left - right;
-            const sharpened = center + laplacian * amount;
-            dst[idx + c] = Math.min(255, Math.max(0, Math.round(sharpened)));
-          }
-          dst[idx + 3] = src[idx + 3];
-        }
-      }
-
-      currentCtx.putImageData(output, 0, 0);
-      const enhancedDataUrl = currentCanvas.toDataURL('image/png', 0.95);
-
-      resolve({
-        enhancedDataUrl,
-        width: targetW,
-        height: targetH,
-        originalWidth: origW,
-        originalHeight: origH,
-      });
-    };
-    img.onerror = () => reject(new Error('Failed to load image for super-resolution processing.'));
-    img.src = dataUrl;
-  });
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        resolve({
+          enhancedDataUrl,
+          width: img.naturalWidth || 2048,
+          height: img.naturalHeight || 2048,
+          originalWidth: Math.round((img.naturalWidth || 2048) / (factor === '8x' ? 8 : factor === '4x' ? 4 : 2)),
+          originalHeight: Math.round((img.naturalHeight || 2048) / (factor === '8x' ? 8 : factor === '4x' ? 4 : 2)),
+        });
+      };
+      img.onerror = () => {
+        resolve({
+          enhancedDataUrl,
+          width: 2048,
+          height: 2048,
+          originalWidth: 512,
+          originalHeight: 512,
+        });
+      };
+      img.src = enhancedDataUrl;
+    });
+  } catch (err) {
+    console.error('Neural super-resolution API error:', err);
+    throw err;
+  }
 }
 
 /**
- * Advanced Multi-Seed Edge-Feathered Matting Segmentation Algorithm
+ * Real AI Foreground Segmentation & Matting Algorithm
  */
 export async function removeBackgroundSegmentation(
-  dataUrl: string,
-  tolerance = 36
+  dataUrl: string
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const w = img.naturalWidth || img.width;
-      const h = img.naturalHeight || img.height;
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return reject(new Error('Canvas 2D unavailable'));
-
-      ctx.drawImage(img, 0, 0);
-      const imgData = ctx.getImageData(0, 0, w, h);
-      const data = imgData.data;
-
-      const samplePoints = [
-        [0, 0],
-        [w - 1, 0],
-        [0, h - 1],
-        [w - 1, h - 1],
-        [Math.floor(w / 2), 0],
-        [Math.floor(w / 2), h - 1],
-        [0, Math.floor(h / 2)],
-        [w - 1, Math.floor(h / 2)],
-      ];
-
-      const bgSeeds: Array<{ r: number; g: number; b: number }> = [];
-      for (const [sx, sy] of samplePoints) {
-        const idx = (sy * w + sx) * 4;
-        bgSeeds.push({ r: data[idx], g: data[idx + 1], b: data[idx + 2] });
-      }
-
-      bgSeeds.push({ r: 255, g: 255, b: 255 });
-      bgSeeds.push({ r: 245, g: 245, b: 245 });
-
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const idx = (y * w + x) * 4;
-          const r = data[idx];
-          const g = data[idx + 1];
-          const b = data[idx + 2];
-
-          let minDistance = 9999;
-          for (const seed of bgSeeds) {
-            const dist = Math.sqrt(
-              Math.pow(r - seed.r, 2) +
-              Math.pow(g - seed.g, 2) +
-              Math.pow(b - seed.b, 2)
-            );
-            if (dist < minDistance) minDistance = dist;
-          }
-
-          if (minDistance < tolerance) {
-            data[idx + 3] = 0;
-          } else if (minDistance < tolerance + 16) {
-            const factor = (minDistance - tolerance) / 16;
-            data[idx + 3] = Math.round(data[idx + 3] * factor);
-          }
-        }
-      }
-
-      ctx.putImageData(imgData, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
-    };
-    img.onerror = () => reject(new Error('Failed to load image for background matting.'));
-    img.src = dataUrl;
-  });
+  try {
+    const result = await geminiService.removeBackground(dataUrl);
+    return result.imageUrl;
+  } catch (err) {
+    console.error('Background removal API error:', err);
+    throw err;
+  }
 }
 
 /**
@@ -234,7 +119,7 @@ async function processImageCanvas(
   }
 ): Promise<string> {
   if (options.removeBackground) {
-    return removeBackgroundSegmentation(dataUrl, options.threshold ? options.threshold / 6 : 36);
+    return removeBackgroundSegmentation(dataUrl);
   }
 
   return new Promise((resolve, reject) => {
@@ -908,7 +793,7 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
     id: 'video_analyze',
     name: 'Multimodal Video Timeline Analyzer',
     category: 'video',
-    description: 'Extracts keyframes and executes deep scene-by-scene narrative analysis, OCR, and timeline breakdowns.',
+    description: 'Extracts keyframes from authentic video files and executes deep scene-by-scene narrative analysis, OCR, and timeline breakdowns.',
     isAvailable: true,
     isMock: false,
     parameters: {
@@ -919,19 +804,19 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
     },
     execute: async (params, context) => {
       const activeAsset = context.activeAsset;
-      let sampleFrames: Array<{ dataUrl: string; timestamp: number }> = [];
-
-      if (activeAsset && activeAsset.dataUrl) {
-        sampleFrames = [
-          { dataUrl: activeAsset.dataUrl, timestamp: 0.0 },
-        ];
-      } else {
-        sampleFrames = [
-          { dataUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=600&auto=format&fit=crop&q=80', timestamp: 0.0 },
-        ];
+      if (!activeAsset || !activeAsset.dataUrl || activeAsset.type !== 'video') {
+        throw new Error('No authentic video file selected. Please select a video asset from the Shared Library to analyze.');
       }
 
-      const analysis = await geminiService.analyzeVideoFrames(sampleFrames, params.prompt);
+      let frames: Array<{ dataUrl: string; timestamp: number }> = [];
+      try {
+        frames = await geminiService.extractVideoKeyframes(activeAsset.dataUrl, 6);
+      } catch (err) {
+        console.warn('Frame extraction failed, analyzing source directly:', err);
+        frames = [{ dataUrl: activeAsset.dataUrl, timestamp: 0.0 }];
+      }
+
+      const analysis = await geminiService.analyzeVideoFrames(frames, params.prompt);
 
       return {
         success: true,
@@ -946,7 +831,7 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
     id: 'video_veo_generate',
     name: 'Veo Video Generation Engine',
     category: 'video',
-    description: 'Synthesizes cinematic video motion sequences using Veo 3.1 Lite preview model.',
+    description: 'Synthesizes authentic cinematic MP4 video motion sequences using Veo 3.1 Lite preview model with full polling and retrieval.',
     isAvailable: true,
     isMock: false,
     parameters: {
@@ -955,16 +840,37 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         prompt: { type: 'STRING', description: 'Cinematic video prompt with motion description.' },
         aspectRatio: { type: 'STRING', description: 'Video aspect ratio', enum: ['16:9', '9:16'] },
         resolution: { type: 'STRING', description: 'Video resolution', enum: ['720p', '1080p'] },
+        saveToLibrary: { type: 'BOOLEAN', description: 'Save generated video to Library.' },
       },
       required: ['prompt'],
     },
-    execute: async (params) => {
-      const result = await geminiService.generateVideo(params.prompt, params.aspectRatio || '16:9', params.resolution || '1080p');
+    execute: async (params, context) => {
+      const result = await geminiService.generateVideoWithPolling(
+        params.prompt,
+        params.aspectRatio || '16:9',
+        params.resolution || '1080p'
+      );
+
+      let savedAsset: LibraryAsset | undefined;
+      if (params.saveToLibrary !== false) {
+        savedAsset = context.saveAsset({
+          name: `Veo - ${params.prompt.slice(0, 24)}.mp4`,
+          type: 'video',
+          dataUrl: result.videoUrl,
+          mimeType: result.mimeType || 'video/mp4',
+          sizeBytes: Math.round(result.videoUrl.length * 0.75),
+          tags: ['veo', 'video', 'ai-generated'],
+          metadata: { toolOrigin: 'veo-studio', prompt: params.prompt, aspectRatio: params.aspectRatio },
+        });
+        context.setActiveAsset(savedAsset);
+      }
+
       return {
         success: true,
-        type: 'json',
-        metadata: result,
-        text: result.message || `Veo video generation initiated for prompt: "${params.prompt}"`,
+        type: 'video' as any,
+        dataUrl: result.videoUrl,
+        asset: savedAsset,
+        text: `Veo video generation completed for prompt: "${params.prompt}"`,
       };
     },
   },
@@ -994,25 +900,7 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       }
 
       if (!audioData) {
-        const textResult = await geminiService.generateText(
-          'Generate a structured, authentic Khmer and English bilingual multi-speaker interview transcription for Angkor heritage documentation in JSON format with fields: detectedLanguage, confidence, speakerCount, speakers: [{speaker, timestamp, text, english, sentiment}].',
-          'You are EchoScript, the premier multi-speaker speech transcription engine.'
-        );
-        try {
-          const parsed = JSON.parse(textResult);
-          return {
-            success: true,
-            type: 'json',
-            metadata: parsed,
-            text: `EchoScript transcribed bilingual dialogue with ${parsed.speakerCount || 2} speakers.`,
-          };
-        } catch {
-          return {
-            success: true,
-            type: 'text',
-            text: textResult,
-          };
-        }
+        throw new Error('No audio file or stream provided. EchoScript requires an authentic audio recording to perform transcription and speaker diarization.');
       }
 
       const transcriptData = await geminiService.transcribeAudio(audioData, mime);
@@ -1020,7 +908,7 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         success: true,
         type: 'json',
         metadata: transcriptData,
-        text: transcriptData.transcript || transcriptData.text || 'Transcription completed.',
+        text: transcriptData.fullTranscript || transcriptData.summary || 'Transcription completed.',
       };
     },
   },

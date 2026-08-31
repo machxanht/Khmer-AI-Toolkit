@@ -89,7 +89,7 @@ export const ImageWorkspace: React.FC = () => {
     if (!ctx) return;
 
     if (filterMode === 'remove_bg') {
-      removeBackgroundSegmentation(activeAsset.dataUrl, 36)
+      removeBackgroundSegmentation(activeAsset.dataUrl)
         .then((transparentUrl) => {
           const transImg = new Image();
           transImg.onload = () => {

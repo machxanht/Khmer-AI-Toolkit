@@ -176,6 +176,178 @@ export const geminiService = {
     return data;
   },
 
+  async enhanceImage(
+    imageBase64: string,
+    factor: string = '2x',
+    mimeType: string = 'image/png'
+  ): Promise<{ imageUrl: string; text?: string; factor?: string }> {
+    const res = await fetch('/api/gemini/enhance-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64, factor, mimeType }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Neural super-resolution failed');
+    return data;
+  },
+
+  async removeBackground(
+    imageBase64: string,
+    mimeType: string = 'image/png'
+  ): Promise<{ imageUrl: string; text?: string }> {
+    const res = await fetch('/api/gemini/remove-background', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64, mimeType }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Background removal failed');
+    return data;
+  },
+
+  async extractVideoKeyframes(
+    videoSource: string | File,
+    frameCount: number = 6
+  ): Promise<Array<{ dataUrl: string; timestamp: number }>> {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.crossOrigin = 'anonymous';
+      video.muted = true;
+      video.playsInline = true;
+
+      let objectUrl = '';
+      if (typeof videoSource === 'string') {
+        video.src = videoSource;
+      } else {
+        objectUrl = URL.createObjectURL(videoSource);
+        video.src = objectUrl;
+      }
+
+      const cleanUp = () => {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      };
+
+      video.onloadedmetadata = async () => {
+        try {
+          const duration = video.duration || 5;
+          const frames: Array<{ dataUrl: string; timestamp: number }> = [];
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+
+          const width = video.videoWidth || 640;
+          const height = video.videoHeight || 360;
+          canvas.width = width;
+          canvas.height = height;
+
+          const timestamps: number[] = [];
+          for (let i = 0; i < frameCount; i++) {
+            const t = Math.max(0.1, (duration / (frameCount + 1)) * (i + 1));
+            timestamps.push(t);
+          }
+
+          for (const t of timestamps) {
+            await new Promise<void>((resSeek) => {
+              const onSeeked = () => {
+                video.removeEventListener('seeked', onSeeked);
+                if (ctx) {
+                  ctx.drawImage(video, 0, 0, width, height);
+                  frames.push({
+                    dataUrl: canvas.toDataURL('image/jpeg', 0.85),
+                    timestamp: Number(t.toFixed(2)),
+                  });
+                }
+                resSeek();
+              };
+              video.addEventListener('seeked', onSeeked);
+              video.currentTime = t;
+              setTimeout(() => {
+                video.removeEventListener('seeked', onSeeked);
+                resSeek();
+              }, 3000);
+            });
+          }
+
+          cleanUp();
+          if (frames.length === 0) {
+            throw new Error('Failed to extract keyframes from video.');
+          }
+          resolve(frames);
+        } catch (err) {
+          cleanUp();
+          reject(err);
+        }
+      };
+
+      video.onerror = () => {
+        cleanUp();
+        reject(new Error('Failed to load video file for keyframe extraction.'));
+      };
+    });
+  },
+
+  async generateVideoWithPolling(
+    prompt: string,
+    aspectRatio: string = '16:9',
+    resolution: string = '1080p',
+    onProgress?: (statusMsg: string) => void
+  ): Promise<{ videoUrl: string; mimeType: string }> {
+    onProgress?.('Initiating Veo video generation job...');
+    const initRes = await fetch('/api/gemini/generate-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, aspectRatio, resolution }),
+    });
+    const initData = await initRes.json();
+    if (!initRes.ok) {
+      throw new Error(initData.error || 'Failed to start Veo video generation');
+    }
+
+    const { operationName } = initData;
+    if (!operationName) {
+      throw new Error('No operation name returned from Veo API');
+    }
+
+    const maxAttempts = 60;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      onProgress?.(`Synthesizing motion frames with Veo (attempt ${attempt}/${maxAttempts})...`);
+      await new Promise((r) => setTimeout(r, 4000));
+
+      const statusRes = await fetch('/api/gemini/video-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operationName }),
+      });
+      const statusData = await statusRes.json();
+      if (!statusRes.ok) {
+        throw new Error(statusData.error || 'Failed to poll video status');
+      }
+
+      if (statusData.error) {
+        throw new Error(`Veo generation error: ${statusData.error.message || JSON.stringify(statusData.error)}`);
+      }
+
+      if (statusData.done) {
+        onProgress?.('Rendering complete! Downloading authentic video stream...');
+        const downloadRes = await fetch('/api/gemini/video-download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operationName }),
+        });
+        const downloadData = await downloadRes.json();
+        if (!downloadRes.ok) {
+          throw new Error(downloadData.error || 'Failed to download completed video');
+        }
+
+        return {
+          videoUrl: downloadData.videoDataUrl,
+          mimeType: downloadData.mimeType || 'video/mp4',
+        };
+      }
+    }
+
+    throw new Error('Veo video generation timed out. The operation may still be processing in the background.');
+  },
+
   async generateImage(
     prompt: string,
     aspectRatio: string = '1:1',
