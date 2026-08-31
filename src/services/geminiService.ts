@@ -175,4 +175,59 @@ export const geminiService = {
     if (!res.ok) throw new Error(data.error || 'Embeddings error');
     return data;
   },
+
+  async generateImage(
+    prompt: string,
+    aspectRatio: string = '1:1',
+    imageBase64?: string
+  ): Promise<{ imageUrl: string; text?: string }> {
+    const res = await fetch('/api/gemini/generate-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, aspectRatio, imageBase64 }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Image generation failed');
+    return data;
+  },
+
+  async analyzeVideoFrames(
+    frames: Array<{ dataUrl?: string; timestamp?: number }>,
+    prompt?: string
+  ): Promise<any> {
+    const res = await fetch('/api/gemini/video-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frames, prompt }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Video analysis failed');
+    return data;
+  },
+
+  async generateVideo(
+    prompt: string,
+    aspectRatio: string = '16:9',
+    resolution: string = '1080p'
+  ): Promise<any> {
+    const res = await fetch('/api/gemini/generate-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, aspectRatio, resolution }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Veo video generation failed');
+    return data;
+  },
+
+  async generateMusic(prompt: string): Promise<{ audioDataUrl: string; lyrics?: string; mimeType: string }> {
+    const res = await fetch('/api/gemini/generate-music', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Lyria music generation failed');
+    return data;
+  },
 };

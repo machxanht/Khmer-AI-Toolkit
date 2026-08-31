@@ -62,6 +62,12 @@ export interface LibraryAsset {
     toolOrigin?: string;
     prompt?: string;
     characterCount?: number;
+    factor?: string;
+    aspectRatio?: string;
+    lyrics?: string;
+    dimensions?: string;
+    originalDimensions?: string;
+    [key: string]: any;
   };
 }
 

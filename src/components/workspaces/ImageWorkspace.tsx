@@ -3,6 +3,8 @@ import { useWorkspace } from '../../context/WorkspaceContext';
 import { ALL_TOOLS } from '../../services/defaultTools';
 import { ToolCard } from '../common/ToolCard';
 import { ToolDefinition } from '../../types';
+import { geminiService } from '../../services/geminiService';
+import { enhanceImageSuperResolution, removeBackgroundSegmentation } from '../../services/toolRegistry';
 import {
   Image as ImageIcon,
   Sliders,
@@ -67,6 +69,9 @@ export const ImageWorkspace: React.FC = () => {
   const [saturation, setSaturation] = useState(100);
   const [filterMode, setFilterMode] = useState<'normal' | 'remove_bg' | 'grayscale' | 'sepia' | 'sharpen'>('normal');
   const [upscaleFactor, setUpscaleFactor] = useState<'2x' | '4x' | '8x'>('8x');
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [enhancedImage, setEnhancedImage] = useState<string | null>(null);
+  const [enhancedMetrics, setEnhancedMetrics] = useState<{ width: number; height: number; origW: number; origH: number } | null>(null);
 
   // Mockup backdrop
   const [selectedBackdrop, setSelectedBackdrop] = useState('luxury_marble');
@@ -83,6 +88,22 @@ export const ImageWorkspace: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    if (filterMode === 'remove_bg') {
+      removeBackgroundSegmentation(activeAsset.dataUrl, 36)
+        .then((transparentUrl) => {
+          const transImg = new Image();
+          transImg.onload = () => {
+            canvas.width = transImg.width;
+            canvas.height = transImg.height;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(transImg, 0, 0);
+          };
+          transImg.src = transparentUrl;
+        })
+        .catch((err) => console.warn('Segmentation error:', err));
+      return;
+    }
+
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
@@ -92,21 +113,7 @@ export const ImageWorkspace: React.FC = () => {
       ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
       ctx.drawImage(img, 0, 0);
 
-      if (filterMode === 'remove_bg') {
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imgData.data;
-        // Simple intelligent threshold background isolation
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-          // If near white or light grey background, make transparent
-          if (r > 220 && g > 220 && b > 220) {
-            data[i + 3] = 0;
-          }
-        }
-        ctx.putImageData(imgData, 0, 0);
-      } else if (filterMode === 'grayscale') {
+      if (filterMode === 'grayscale') {
         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imgData.data;
         for (let i = 0; i < data.length; i += 4) {
@@ -136,11 +143,18 @@ export const ImageWorkspace: React.FC = () => {
   const handleGenerateNanoBanana = async () => {
     setIsProcessing(true);
     try {
-      showToast('Nano Banana synthesizing render...', 'info');
-      // High quality curated stock placeholder or fallback
-      await new Promise((r) => setTimeout(r, 1400));
-      const sampleUrl = 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1000&auto=format&fit=crop&q=80';
-      setGeneratedImage(sampleUrl);
+      showToast('Nano Banana synthesizing render with Gemini 3.1 Flash Lite...', 'info');
+      const genResult = await geminiService.generateImage(prompt, aspectRatio, activeAsset?.dataUrl);
+      setGeneratedImage(genResult.imageUrl);
+
+      const newAsset = addAsset({
+        name: `Nano Banana - ${prompt.slice(0, 20)}.png`,
+        dataUrl: genResult.imageUrl,
+        type: 'image',
+        mimeType: 'image/png',
+        tags: ['nano-banana', 'gemini-image', 'generated'],
+      });
+      setActiveAsset(newAsset);
 
       addHistoryRecord({
         toolId: 'nano-banana',
@@ -148,10 +162,10 @@ export const ImageWorkspace: React.FC = () => {
         category: 'image',
         prompt,
         settings: { aspectRatio },
-        outputPreview: sampleUrl,
+        outputPreview: genResult.imageUrl,
         status: 'success',
       });
-      showToast('Image generated successfully!', 'success');
+      showToast('Image generated & saved to Library!', 'success');
     } catch (err: any) {
       showToast(err.message || 'Generation failed', 'error');
     } finally {
@@ -159,14 +173,58 @@ export const ImageWorkspace: React.FC = () => {
     }
   };
 
+  const handleRunSuperResolution = async () => {
+    if (!activeAsset || activeAsset.type !== 'image') {
+      showToast('Please select an image in the Library first.', 'warning');
+      return;
+    }
+    setIsEnhancing(true);
+    try {
+      showToast(`Executing ${upscaleFactor} multi-pass super-resolution & Laplacian convolution...`, 'info');
+      const result = await enhanceImageSuperResolution(activeAsset.dataUrl, upscaleFactor);
+      setEnhancedImage(result.enhancedDataUrl);
+      setEnhancedMetrics({
+        width: result.width,
+        height: result.height,
+        origW: result.originalWidth,
+        origH: result.originalHeight,
+      });
+
+      const newAsset = addAsset({
+        name: `${activeAsset.name} (Enhanced ${upscaleFactor})`,
+        dataUrl: result.enhancedDataUrl,
+        type: 'image',
+        mimeType: 'image/png',
+        tags: ['enhanced', upscaleFactor, 'super-resolution'],
+      });
+      setActiveAsset(newAsset);
+
+      addHistoryRecord({
+        toolId: 'enhance',
+        toolName: 'ENHANCE! Super-Resolution',
+        category: 'image',
+        prompt: `Super-Resolution ${upscaleFactor} (${result.width}x${result.height}px)`,
+        outputPreview: result.enhancedDataUrl,
+        status: 'success',
+      });
+      showToast(`Enhanced image (${result.width}x${result.height}px) saved to Library!`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Super-resolution failed', 'error');
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
   const handleSaveToLibrary = (name: string, url: string) => {
-    addAsset({
+    const saved = addAsset({
       name,
       dataUrl: url,
       type: 'image',
       mimeType: 'image/png',
-      tags: ['image-workspace', 'generated'],
+      tags: ['image-workspace', 'saved'],
     });
+    setActiveAsset(saved);
+    showToast(`Saved "${name}" to Library!`, 'success');
   };
 
   const handleSaveCanvasOutput = () => {
@@ -491,27 +549,61 @@ export const ImageWorkspace: React.FC = () => {
               </div>
 
               {activeAsset?.type === 'image' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-2">
-                    <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">Original Resolution (1x)</span>
-                    <img
-                      src={activeAsset.dataUrl}
-                      alt="Original"
-                      referrerPolicy="no-referrer"
-                      className="w-full h-64 object-cover rounded-lg blur-[0.5px]"
-                    />
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-white/50 font-mono">
+                      Target: {activeAsset.name}
+                    </span>
+                    <button
+                      onClick={handleRunSuperResolution}
+                      disabled={isEnhancing}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50"
+                    >
+                      {isEnhancing ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Resampling ({upscaleFactor})...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>Execute {upscaleFactor} Super-Resolution</span>
+                        </>
+                      )}
+                    </button>
                   </div>
-                  <div className="p-4 rounded-xl bg-black/40 border border-amber-500/30 space-y-2">
-                    <div className="flex items-center justify-between text-[10px] font-mono text-amber-400 uppercase tracking-widest">
-                      <span>Upscaled ({upscaleFactor}) - Ultra Sharp</span>
-                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-[9px]">Neural Render</span>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                      <div className="flex items-center justify-between text-[10px] font-mono text-white/40 uppercase tracking-widest">
+                        <span>Original Input (1x)</span>
+                        {enhancedMetrics && <span>{enhancedMetrics.origW} x {enhancedMetrics.origH} px</span>}
+                      </div>
+                      <img
+                        src={activeAsset.dataUrl}
+                        alt="Original"
+                        referrerPolicy="no-referrer"
+                        className="w-full h-64 object-cover rounded-lg"
+                      />
                     </div>
-                    <img
-                      src={activeAsset.dataUrl}
-                      alt="Enhanced"
-                      referrerPolicy="no-referrer"
-                      className="w-full h-64 object-cover rounded-lg contrast-110 saturate-105"
-                    />
+                    <div className="p-4 rounded-xl bg-black/40 border border-amber-500/30 space-y-2">
+                      <div className="flex items-center justify-between text-[10px] font-mono text-amber-400 uppercase tracking-widest">
+                        <span>Upscaled ({upscaleFactor}) - Ultra Sharp</span>
+                        {enhancedMetrics ? (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-[9px] font-bold">
+                            {enhancedMetrics.width} x {enhancedMetrics.height} px
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-[9px]">Ready to Run</span>
+                        )}
+                      </div>
+                      <img
+                        src={enhancedImage || activeAsset.dataUrl}
+                        alt="Enhanced"
+                        referrerPolicy="no-referrer"
+                        className="w-full h-64 object-cover rounded-lg"
+                      />
+                    </div>
                   </div>
                 </div>
               ) : (

@@ -431,6 +431,224 @@ app.post("/api/gemini/embeddings", async (req: Request, res: Response) => {
   }
 });
 
+// 10. Real Image Generation & Editing (Nano Banana)
+app.post("/api/gemini/generate-image", async (req: Request, res: Response) => {
+  try {
+    const { prompt, aspectRatio = "1:1", imageBase64, mimeType = "image/png" } = req.body;
+    const ai = getGeminiClient();
+
+    if (!ai) {
+      return res.status(400).json({
+        error: "GEMINI_API_KEY is required for Image Generation. Please configure your API key.",
+      });
+    }
+
+    const parts: any[] = [];
+    if (imageBase64) {
+      const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+      parts.push({
+        inlineData: {
+          data: cleanBase64,
+          mimeType: mimeType || "image/png",
+        },
+      });
+    }
+    parts.push({ text: prompt || "Generate a high fidelity creative image" });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-lite-image",
+      contents: { parts },
+      config: {
+        imageConfig: {
+          aspectRatio: aspectRatio as any,
+        },
+      },
+    });
+
+    let imageUrl: string | null = null;
+    let textOutput = "";
+
+    const candidateParts = response.candidates?.[0]?.content?.parts || [];
+    for (const part of candidateParts) {
+      if (part.inlineData?.data) {
+        const mime = part.inlineData.mimeType || "image/png";
+        imageUrl = `data:${mime};base64,${part.inlineData.data}`;
+      } else if (part.text) {
+        textOutput += part.text + " ";
+      }
+    }
+
+    if (!imageUrl) {
+      return res.status(422).json({
+        error: "Model did not return image data. Output: " + (textOutput || "No output"),
+        text: textOutput,
+      });
+    }
+
+    res.json({ imageUrl, text: textOutput.trim() });
+  } catch (err: any) {
+    console.error("Error in /api/gemini/generate-image:", err);
+    res.status(500).json({ error: err.message || "Image generation failed" });
+  }
+});
+
+// 11. Multimodal Video Keyframe Timeline Analyzer
+app.post("/api/gemini/video-analyze", async (req: Request, res: Response) => {
+  try {
+    const { frames, prompt } = req.body;
+    const ai = getGeminiClient();
+
+    if (!ai) {
+      return res.status(400).json({
+        error: "GEMINI_API_KEY is required for Video Analysis.",
+      });
+    }
+
+    if (!frames || !Array.isArray(frames) || frames.length === 0) {
+      return res.status(400).json({ error: "No video keyframes provided for analysis." });
+    }
+
+    const contentsParts: any[] = [];
+    const selectedFrames = frames.slice(0, 8);
+
+    selectedFrames.forEach((frame: any, idx: number) => {
+      const cleanBase64 = (typeof frame === 'string' ? frame : frame.dataUrl || frame.data).replace(/^data:image\/\w+;base64,/, "");
+      contentsParts.push({
+        inlineData: {
+          data: cleanBase64,
+          mimeType: "image/jpeg",
+        },
+      });
+      const timeLabel = frame.timestamp !== undefined ? `${frame.timestamp.toFixed(1)}s` : `Frame ${idx + 1}`;
+      contentsParts.push({
+        text: `[Video Keyframe ${idx + 1} at timestamp ${timeLabel}]`,
+      });
+    });
+
+    const userPrompt = prompt || "Analyze these sequential keyframes extracted from the video file and provide an authoritative scene timeline.";
+
+    contentsParts.push({
+      text: `${userPrompt}
+Output in structured JSON:
+{
+  "summary": "Executive summary of the video content, motion arc, and key subject matter",
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "timestamp": "00:00 - 00:04",
+      "title": "Scene title",
+      "description": "Visual scene narration and subject action",
+      "detectedObjects": ["object1", "object2"],
+      "detectedText": "Any on-screen text or OCR inscriptions",
+      "confidence": 0.98
+    }
+  ],
+  "keyEvents": ["Major visual event 1", "Major visual event 2"],
+  "visualAesthetics": "Color palette, lighting, cinematography style, and camera trajectory"
+}`,
+    });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: contentsParts,
+      config: {
+        systemInstruction: "You are an expert multimodal Video Timeline and Scene Analyzer. Inspect the chronological video keyframes and return a structured, detailed scene-by-scene analysis.",
+        responseMimeType: "application/json",
+      },
+    });
+
+    res.json(JSON.parse(response.text || "{}"));
+  } catch (err: any) {
+    console.error("Error in /api/gemini/video-analyze:", err);
+    res.status(500).json({ error: err.message || "Video analysis failed" });
+  }
+});
+
+// 12. Veo Video Generation API
+app.post("/api/gemini/generate-video", async (req: Request, res: Response) => {
+  try {
+    const { prompt, aspectRatio = "16:9", resolution = "1080p" } = req.body;
+    const ai = getGeminiClient();
+
+    if (!ai) {
+      return res.status(400).json({
+        error: "GEMINI_API_KEY is required for Veo video generation.",
+      });
+    }
+
+    const operation = await ai.models.generateVideos({
+      model: "veo-3.1-lite-generate-preview",
+      prompt: prompt || "Cinematic aerial sweep across temple at dawn",
+      config: {
+        numberOfVideos: 1,
+        resolution: resolution === "720p" ? "720p" : "1080p",
+        aspectRatio: aspectRatio === "9:16" ? "9:16" : "16:9",
+      },
+    });
+
+    res.json({
+      operationName: (operation as any).name,
+      status: "processing",
+      message: "Veo video generation operation registered with Google GenAI.",
+    });
+  } catch (err: any) {
+    console.error("Error in /api/gemini/generate-video:", err);
+    res.status(500).json({ error: err.message || "Veo generation failed" });
+  }
+});
+
+// 13. Lyria Music Generation API
+app.post("/api/gemini/generate-music", async (req: Request, res: Response) => {
+  try {
+    const { prompt } = req.body;
+    const ai = getGeminiClient();
+
+    if (!ai) {
+      return res.status(400).json({
+        error: "GEMINI_API_KEY is required for Lyria music generation.",
+      });
+    }
+
+    const response = await ai.models.generateContentStream({
+      model: "lyria-3-clip-preview",
+      contents: prompt || "Traditional Cambodian Roneat Ek xylophone with ambient lo-fi beat",
+    });
+
+    let audioBase64 = "";
+    let lyrics = "";
+    let mimeType = "audio/wav";
+
+    for await (const chunk of response) {
+      const parts = chunk.candidates?.[0]?.content?.parts;
+      if (!parts) continue;
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          if (!audioBase64 && part.inlineData.mimeType) {
+            mimeType = part.inlineData.mimeType;
+          }
+          audioBase64 += part.inlineData.data;
+        }
+        if (part.text && !lyrics) {
+          lyrics = part.text;
+        }
+      }
+    }
+
+    if (!audioBase64) {
+      return res.status(422).json({ error: "Lyria model did not return audio data for this prompt." });
+    }
+
+    res.json({
+      audioDataUrl: `data:${mimeType};base64,${audioBase64}`,
+      lyrics,
+      mimeType,
+    });
+  } catch (err: any) {
+    console.error("Error in /api/gemini/generate-music:", err);
+    res.status(500).json({ error: err.message || "Lyria music generation failed" });
+  }
+});
+
 // Vite middleware / Production static serving
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
