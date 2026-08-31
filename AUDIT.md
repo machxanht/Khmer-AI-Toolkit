@@ -1,37 +1,37 @@
 # Tool Audit
 
-| Tool | Type | Test | Result | Error |
-| :--- | :--- | :--- | :--- | :--- |
-| Universal AI Command | API | Real natural language DAG intent generation (`POST /api/gemini/command`) | PASS | None |
-| AI Agent / Orchestrator | API | Multi-tool function calling DAG orchestration (`POST /api/gemini/function-call`) | PASS | None |
-| Prompt Assistant | API | Prompt expansion with strict constraint preservation (`POST /api/gemini/prompt-assistant`) | PASS | None |
-| Function Calling | API | Native SDK function declarations bridge (`POST /api/gemini/function-call`) | PASS | None |
-| Agentic Vision | API | Multimodal spatial coordinate bounding (`POST /api/gemini/vision`) | PASS | None |
-| Nano Banana / Image Generation | API | Text-to-Image synthesis with `gemini-3.1-flash-lite-image` (`POST /api/gemini/generate-image`) | BLOCKED | 429 Quota/Rate Limit on `gemini-3.1-flash-lite-image` |
-| ENHANCE! 8x | API | Neural super-resolution (`POST /api/gemini/enhance-image`) | BLOCKED | 429 Quota/Rate Limit on `gemini-3.1-flash-lite-image` |
-| Pixshop | CODE | Deterministic HTML5 Canvas 2D color filter pipeline | PASS | None |
-| Background Removal | API | AI foreground segmentation matting (`POST /api/gemini/remove-background`) | BLOCKED | 429 Quota/Rate Limit on `gemini-3.1-flash-lite-image` |
-| AI Pointer | CODE | Canvas normalized coordinate calculation (0-100%) | PASS | None |
-| Product Mockup | API | AI studio backdrop generation (`POST /api/gemini/generate-image`) | BLOCKED | 429 Quota/Rate Limit on `gemini-3.1-flash-lite-image` |
-| VibeCheck | API | Multimodal aesthetic balance & color critique (`POST /api/gemini/vision`) | PASS | None |
-| Veo Studio | API | Video generation with `veo-3.1-lite-generate-preview` (`POST /api/gemini/generate-video`) | BLOCKED | 429 Quota/Rate Limit on `veo-3.1-lite-generate-preview` |
-| Video Timeline Analyzer | API | Multi-keyframe scene timeline extraction (`POST /api/gemini/video-analyze`) | PASS | None |
-| Type Motion | CODE | Deterministic CSS keyframe motion generator | PASS | None |
-| EchoScript | API | Audio transcription with `gemini-3.5-transcribe` (`POST /api/gemini/transcribe`) | PASS | None |
-| Voice Library / TTS | CODE | Web Speech API phonetic speech synthesis | PASS | None |
-| Lyria Music Studio | API | Music synthesis stream with `lyria-3-clip-preview` (`POST /api/gemini/generate-music`) | BLOCKED | 429 Quota/Rate Limit on `lyria-3-clip-preview` |
-| Chat with Docs | API | Context-grounded document QA with citations (`POST /api/gemini/generate-text`) | PASS | None |
-| Ask the Manual | API | Technical manual extraction (`POST /api/gemini/generate-text`) | PASS | None |
-| Document Embeddings | API | Vector embedding with `gemini-embedding-2` (`POST /api/gemini/embeddings`) | PASS | None |
-| Infinite Wiki | API | Markdown encyclopedia generation (`POST /api/gemini/generate-text`) | PASS | None |
-| InTute Tutor | API | Socratic language tutor prompt (`POST /api/gemini/generate-text`) | PASS | None |
-| Flashcards | CODE | SM-2 spaced repetition calculation engine | PASS | None |
-| Khmer Phonology | CODE | 33-consonant phonetic matrix lookup | PASS | None |
-| Chuon Nath Dictionary | API | Lexicographical query with `gemini-3.6-flash` (`POST /api/gemini/khmer`) | PASS | None |
-| Khmer OCR / Epigraphy | API | Multimodal inscription OCR (`POST /api/gemini/vision`) | PASS | None |
-| Khmer Creative / Heritage | API | Archaeological & cultural knowledge (`POST /api/gemini/khmer`) | PASS | None |
-| Shared Library | CODE | In-memory & LocalStorage asset manager | PASS | None |
-| Library Search / Load | CODE | Tag, MIME type, and text metadata filtering | PASS | None |
-| Workflow Builder | CODE | Directed Acyclic Graph (DAG) state propagation | PASS | None |
-| Batch Processing | CODE | Multi-asset sequential queue executor | PASS | None |
-| History / Audit | CODE | Timeline and audit trail logger | PASS | None |
+| Tool | Type | Status | Real execution path | Exact problem |
+|---|---|---|---|---|
+| Universal AI Command | API | PASS | `Header.tsx` / `AiAgentWorkspace.tsx` → `WorkspaceContext.runGlobalCommand` → `geminiService.planCommand` → `POST /api/gemini/command` → `gemini-3.6-flash` → `activePlan` state & task steps UI | None |
+| AI Agent / Orchestrator | API | PASS | `AiAgentWorkspace.tsx` → `WorkspaceContext.runNativeFunctionCalling` → `geminiService.runFunctionCall` → `POST /api/gemini/function-call` → `gemini-3.6-flash` → `executeRegisteredTool` → Tool output UI | None |
+| Prompt Assistant | API | PASS | `AiAgentWorkspace.tsx` → `handleEnhancePrompt` → `geminiService.assistPrompt` → `POST /api/gemini/prompt-assistant` → `gemini-3.6-flash` → Structured breakdown & copy UI | None |
+| Function Calling | API | PASS | `AiAgentWorkspace.tsx` → `handleExecuteFunctionKitchen` → `WorkspaceContext.executeRegisteredTool` → `TOOL_REGISTRY[toolId].execute` → JSON output UI & Shared Library | None |
+| Agentic Vision | API | PASS | `AiAgentWorkspace.tsx` → `handleVisionAnalyze` → `geminiService.analyzeVision` → `POST /api/gemini/vision` → `gemini-3.6-flash` (multimodal image part) → Bounding boxes & spatial report UI | None |
+| Nano Banana / Image Generation | API | BLOCKED | `ImageWorkspace.tsx` → `handleGenerateNanoBanana` → `geminiService.generateImage` → `POST /api/gemini/generate-image` → `gemini-3.1-flash-lite-image` | Google API returns HTTP 429 `RESOURCE_EXHAUSTED` (Quota/rate limit on `gemini-3.1-flash-lite-image`) |
+| ENHANCE! 8x | API | BLOCKED | `ImageWorkspace.tsx` → `handleRunSuperResolution` → `toolRegistry.enhanceImageSuperResolution` → `geminiService.enhanceImage` → `POST /api/gemini/enhance-image` → `gemini-3.1-flash-lite-image` | Google API returns HTTP 429 `RESOURCE_EXHAUSTED` (Quota/rate limit on `gemini-3.1-flash-lite-image`) |
+| Pixshop | CODE | PASS | `ImageWorkspace.tsx` → `useEffect` / `canvasRef` → HTML5 Canvas 2D context (`ctx.filter`, `getImageData`/`putImageData`) → Real-time canvas render & "Save to Library" PNG | None |
+| Background Removal | API | BLOCKED | `ImageWorkspace.tsx` → `handleRemoveBackgroundAction` → `toolRegistry.removeBackgroundSegmentation` → `geminiService.removeBackground` → `POST /api/gemini/remove-background` → `gemini-3.1-flash-lite-image` | Google API returns HTTP 429 `RESOURCE_EXHAUSTED` (Quota/rate limit on `gemini-3.1-flash-lite-image`) |
+| AI Pointer | CODE | PASS | `ImageWorkspace.tsx` → `handleCanvasClick` → `getBoundingClientRect` normalized coordinate math (0–100%) → Interactive pin marker & coordinate display | None |
+| Product Mockup | API | BLOCKED | `ImageWorkspace.tsx` → `Product Mockup Studio` → `geminiService.generateImage` → `POST /api/gemini/generate-image` → `gemini-3.1-flash-lite-image` | Google API returns HTTP 429 `RESOURCE_EXHAUSTED` (Quota/rate limit on `gemini-3.1-flash-lite-image`) |
+| VibeCheck | API | PASS | `ImageWorkspace.tsx` → `VibeCheck` → `geminiService.analyzeVision` → `POST /api/gemini/vision` → `gemini-3.6-flash` → Aesthetic critique & palette balance UI | None |
+| Veo Studio | API | BLOCKED | `VideoWorkspace.tsx` → `handleGenerateVideo` → `geminiService.generateVideoWithPolling` → `POST /api/gemini/generate-video` → `veo-3.1-lite-generate-preview` | Google API returns HTTP 429 `RESOURCE_EXHAUSTED` (Veo 3.1 video generation model access/quota restricted) |
+| Video Timeline Analyzer | API | PASS | `VideoWorkspace.tsx` → `handleAnalyzeVideo` → `geminiService.extractVideoKeyframes` (HTML5 video canvas) → `POST /api/gemini/video-analyze` → `gemini-3.6-flash` → Interactive scene timeline & keyframes UI | None |
+| Type Motion | CODE | PASS | `VideoWorkspace.tsx` → `Type Motion Lab` → Interactive typography state & CSS keyframe animation generator → Real-time rendered motion stage | None |
+| EchoScript | API | PASS | `AudioWorkspace.tsx` → `handleTranscribeEchoScript` → `geminiService.transcribeAudio` → `POST /api/gemini/transcribe` → `gemini-3.5-transcribe` → Diarized transcript & speaker segments UI | None |
+| Voice Library / TTS | CODE | PASS | `AudioWorkspace.tsx` → `handlePlayTTS` → Browser `window.speechSynthesis` (`SpeechSynthesisUtterance` with `km-KH`/`en-US` language routing) → Authentic audio playback | None |
+| Lyria Music Studio | API | BLOCKED | `AudioWorkspace.tsx` → `handleGenerateLyriaMusic` → `geminiService.generateMusic` → `POST /api/gemini/generate-music` → `lyria-3-clip-preview` | Google API returns HTTP 429 `RESOURCE_EXHAUSTED` (Lyria music generation model access/quota restricted) |
+| Chat with Docs | API | PASS | `DocumentsWorkspace.tsx` → `handleAskDocument` → `geminiService.generateText` (grounded context prompt) → `POST /api/gemini/generate-text` → `gemini-3.6-flash` → Cited answer UI | None |
+| Ask the Manual | API | PASS | `DocumentsWorkspace.tsx` → `geminiService.generateText` (technical manual extraction prompt) → `POST /api/gemini/generate-text` → `gemini-3.6-flash` → Step-by-step extraction UI | None |
+| Document Embeddings | API | PASS | `DocumentsWorkspace.tsx` → `geminiService.getEmbeddings` → `POST /api/gemini/embeddings` → `gemini-embedding-2` → Vector dimension metrics & float array UI | None |
+| Infinite Wiki | API | PASS | `DocumentsWorkspace.tsx` → `handleGenerateWiki` → `geminiService.generateText` (encyclopedic prompt) → `POST /api/gemini/generate-text` → `gemini-3.6-flash` → Markdown article display UI | None |
+| InTute Tutor | API | PASS | `LearningWorkspace.tsx` → `handleSendTutor` → `geminiService.generateText` (Socratic tutor prompt) → `POST /api/gemini/generate-text` → `gemini-3.6-flash` → Tutor chat conversation UI | None |
+| Flashcards | CODE | PASS | `LearningWorkspace.tsx` → `KHMER_FLASHCARDS` → 3D flip card state & SM-2 spaced repetition calculation engine → Interactive flashcard drill UI | None |
+| Khmer Phonology | CODE | PASS | `KhmerWorkspace.tsx` → `KHMER_CONSONANTS` 33-consonant matrix → Series (A/O), IPA acoustic details & sub-consonant (ជើង) UI | None |
+| Chuon Nath Dictionary | API | PASS | `KhmerWorkspace.tsx` → `handleSearchDictionary` → `geminiService.queryKhmer` → `POST /api/gemini/khmer` → `gemini-3.6-flash` → Chuon Nath lexicon definition & etymology UI | None |
+| Khmer OCR / Epigraphy | API | PASS | `KhmerWorkspace.tsx` → `handleRunKhmerOcr` → `geminiService.analyzeVision` → `POST /api/gemini/vision` → `gemini-3.6-flash` → Unicode Khmer transcription & translation UI | None |
+| Khmer Creative / Heritage | API | PASS | `KhmerWorkspace.tsx` → `handleGenerateKhmerContent` → `geminiService.queryKhmer` → `POST /api/gemini/khmer` → `gemini-3.6-flash` → Classical poetry & heritage prose UI | None |
+| Shared Library | CODE | PASS | `LibraryWorkspace.tsx` → `WorkspaceContext.addAsset` / `deleteAsset` → `FileReader` & `localStorage` persistence → Asset grid & multi-modal management UI | None |
+| Library Search / Load | CODE | PASS | `LibraryWorkspace.tsx` → Search input `searchQuery` & type filters → Instant metadata search & `openToolWithAsset` workspace routing | None |
+| Workflow Builder | CODE | PASS | `AutomationWorkspace.tsx` → Preset & custom DAG nodes → Topological runner calling `executeRegisteredTool` → Output edge propagation & Library asset export | None |
+| Batch Processing | CODE | PASS | `AutomationWorkspace.tsx` → Sequential pipeline runner over asset arrays → Multi-asset batch processing & status tracking | None |
+| History / Audit | CODE | PASS | `HistoryWorkspace.tsx` → `WorkspaceContext.addHistoryRecord` → Execution audit logs with timestamps, copy prompt, & rerun triggers | None |
