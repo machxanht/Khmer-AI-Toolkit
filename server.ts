@@ -34,11 +34,12 @@ app.get("/api/health", (_req: Request, res: Response) => {
     hasApiKey: hasKey,
     version: "2.4.0",
     models: {
-      text: "gemini-3.7-flash",
+      text: "gemini-3.6-flash",
       fastText: "gemini-3.1-flash-lite",
       image: "gemini-3.1-flash-lite-image",
       transcribe: "gemini-3.5-transcribe",
       tts: "gemini-3.1-flash-tts-preview",
+      embeddings: "gemini-embedding-2",
     },
   });
 });
